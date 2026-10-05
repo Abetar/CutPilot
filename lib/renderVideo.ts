@@ -65,6 +65,19 @@ export type RenderImpactSegment = {
   words: RenderSubtitleWord[];
 };
 
+export type RenderProgressUpdate = {
+  percent: number;
+
+  phase:
+    | "INITIALIZING"
+    | "PREPARING"
+    | "ENCODING"
+    | "FINALIZING"
+    | "DONE";
+
+  message: string;
+};
+
 export type RenderVideoOptions = {
   width: number;
 
@@ -83,6 +96,10 @@ export type RenderVideoOptions = {
   subtitleSegments?: RenderSubtitleSegment[];
 
   impactSegments?: RenderImpactSegment[];
+
+  onProgress?: (
+    update: RenderProgressUpdate
+  ) => void;
 };
 
 /*
@@ -1885,6 +1902,33 @@ export async function renderVideoFromWorkspace(
     );
   }
 
+  const reportProgress = (
+    percent: number,
+    phase: RenderProgressUpdate["phase"],
+    message: string
+  ) => {
+    const safePercent =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(percent)
+        )
+      );
+
+    options.onProgress?.({
+      percent: safePercent,
+      phase,
+      message,
+    });
+  };
+
+  reportProgress(
+    2,
+    "INITIALIZING",
+    "Inicializando motor de render..."
+  );
+
   const ffmpeg =
     await getFFmpeg();
 
@@ -1895,6 +1939,12 @@ export async function renderVideoFromWorkspace(
   */
   await probeSubtitleFilterSupport(
     ffmpeg
+  );
+
+  reportProgress(
+    5,
+    "PREPARING",
+    "Preparando capas y timeline..."
   );
 
   const renderId =
@@ -2251,6 +2301,12 @@ export async function renderVideoFromWorkspace(
   let nextAuxInputIndex =
     1 +
     usedBrollInputs.length;
+
+  reportProgress(
+    9,
+    "PREPARING",
+    "Preparando subtítulos..."
+  );
 
   /*
     ======================================
@@ -2612,6 +2668,12 @@ export async function renderVideoFromWorkspace(
       );
     }
   }
+
+  reportProgress(
+    16,
+    "PREPARING",
+    "Preparando efectos visuales..."
+  );
 
   /*
     ======================================
@@ -2985,6 +3047,12 @@ export async function renderVideoFromWorkspace(
       );
     }
   }
+
+  reportProgress(
+    21,
+    "PREPARING",
+    "Construyendo composición final..."
+  );
 
   /*
     ======================================
@@ -3447,17 +3515,78 @@ export async function renderVideoFromWorkspace(
     outputName
   );
 
-  try {
-    const exitCode =
-      await ffmpeg.exec(
-        args
+  const handleFfmpegProgress = ({
+    progress,
+  }: {
+    progress: number;
+  }) => {
+    if (
+      !Number.isFinite(progress)
+    ) {
+      return;
+    }
+
+    /*
+      Reservamos 0-24% para preparar assets/timelines y
+      95-100% para leer/empaquetar el MP4.
+
+      El progreso nativo de FFmpeg ocupa la parte pesada:
+      24% -> 95%.
+    */
+    const normalized =
+      Math.max(
+        0,
+        Math.min(
+          1,
+          progress
+        )
       );
+
+    reportProgress(
+      24 +
+        normalized * 71,
+      "ENCODING",
+      "Codificando video..."
+    );
+  };
+
+  try {
+    reportProgress(
+      24,
+      "ENCODING",
+      "Codificando video..."
+    );
+
+    ffmpeg.on(
+      "progress",
+      handleFfmpegProgress
+    );
+
+    let exitCode: number;
+
+    try {
+      exitCode =
+        await ffmpeg.exec(
+          args
+        );
+    } finally {
+      ffmpeg.off(
+        "progress",
+        handleFfmpegProgress
+      );
+    }
 
     if (exitCode !== 0) {
       throw new Error(
         "FFmpeg no pudo completar el render del video."
       );
     }
+
+    reportProgress(
+      97,
+      "FINALIZING",
+      "Finalizando MP4..."
+    );
 
     const outputData =
       await ffmpeg.readFile(
@@ -3489,6 +3618,12 @@ export async function renderVideoFromWorkspace(
           type: "video/mp4",
         }
       );
+
+    reportProgress(
+      100,
+      "DONE",
+      "Render listo."
+    );
 
     return new File(
       [blob],

@@ -16,6 +16,7 @@ import {
   type RenderBrollSegment,
   type RenderEffectSegment,
   type RenderImpactSegment,
+  type RenderProgressUpdate,
   type RenderSubtitleSegment,
 } from "@/lib/renderVideo";
 
@@ -130,6 +131,13 @@ export default function AutoEditPage() {
 
   const [videoRenderMessage, setVideoRenderMessage] =
     useState<string | null>(null);
+
+  const [renderProgress, setRenderProgress] =
+    useState<RenderProgressUpdate>({
+      percent: 0,
+      phase: "INITIALIZING",
+      message: "Esperando render...",
+    });
 
   const [renderedVideoUrl, setRenderedVideoUrl] =
     useState<string | null>(null);
@@ -576,6 +584,11 @@ export default function AutoEditPage() {
     }
 
     setVideoRenderStatus("PREPARING");
+    setRenderProgress({
+      percent: 1,
+      phase: "PREPARING",
+      message: "Preparando video original y B-roll seleccionados...",
+    });
     setVideoRenderMessage(
       "Preparando video original y B-roll seleccionados..."
     );
@@ -778,6 +791,7 @@ export default function AutoEditPage() {
             effectSegments,
             subtitleSegments,
             impactSegments,
+            onProgress: setRenderProgress,
           }
         );
 
@@ -792,6 +806,11 @@ export default function AutoEditPage() {
       setRenderedVideo(renderedFile);
 
       setRenderedVideoUrl(previewUrl);
+      setRenderProgress({
+        percent: 100,
+        phase: "DONE",
+        message: "Render listo.",
+      });
       setVideoRenderStatus("READY");
       setVideoRenderMessage(
         `Render listo: ${formatBytes(renderedFile.size)}. Revisa el preview antes de continuar.`
@@ -803,6 +822,10 @@ export default function AutoEditPage() {
       );
 
       setVideoRenderStatus("FAILED");
+      setRenderProgress((current) => ({
+        ...current,
+        message: "El render se detuvo por un error.",
+      }));
       setVideoRenderMessage(
         error instanceof Error
           ? error.message
@@ -1296,10 +1319,48 @@ export default function AutoEditPage() {
                         {videoRenderStatus === "PREPARING"
                           ? "PREPARING..."
                           : videoRenderStatus === "RENDERING"
-                            ? "RENDERING..."
+                            ? `RENDERING ${renderProgress.percent}%`
                             : "RENDER VIDEO"}
                       </button>
                     </div>
+
+                    {(videoRenderStatus === "PREPARING" ||
+                      videoRenderStatus === "RENDERING") && (
+                      <div className="mt-4 overflow-hidden rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.025] p-4">
+                        <div className="flex items-end justify-between gap-4">
+                          <div>
+                            <p className="flex items-center gap-2 text-[10px] font-bold tracking-[0.16em] text-cyan-300">
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />
+                              RENDER PROGRESS
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-400">
+                              {renderProgress.message}
+                            </p>
+                          </div>
+
+                          <p className="shrink-0 text-3xl font-black tracking-[-0.05em] text-white">
+                            {renderProgress.percent}
+                            <span className="ml-0.5 text-sm text-slate-500">%</span>
+                          </p>
+                        </div>
+
+                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                          <div
+                            className="h-full rounded-full bg-cyan-300 shadow-[0_0_14px_rgba(103,232,249,0.45)] transition-[width] duration-300 ease-out"
+                            style={{
+                              width: `${renderProgress.percent}%`,
+                            }}
+                          />
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600">
+                          <span>PREPARE</span>
+                          <span>ENCODE</span>
+                          <span>FINALIZE</span>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="mt-4 rounded-2xl border border-fuchsia-300/15 bg-fuchsia-300/[0.025] p-4">
                       <label
