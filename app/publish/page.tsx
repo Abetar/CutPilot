@@ -153,6 +153,14 @@ export default function PublishPage() {
       null
     );
 
+  const [
+    copyAllStatus,
+    setCopyAllStatus,
+  ] =
+    useState<
+      "IDLE" | "COPIED" | "ERROR"
+    >("IDLE");
+
   useEffect(() => {
     if (!renderedVideo) {
       setPreviewUrl(null);
@@ -380,6 +388,124 @@ export default function PublishPage() {
     );
   }
 
+  async function handleCopyAll() {
+    const sections = [
+      "YOUTUBE",
+      "",
+      "TITLE",
+      youtubeTitle.trim() || "—",
+      "",
+      "DESCRIPTION",
+      youtubeDescription.trim() || "—",
+      "",
+      "TAGS",
+      youtubeTags.trim() || "—",
+      "",
+      "--------------------",
+      "",
+      "TIKTOK",
+      "",
+      "CAPTION",
+      tiktokCaption.trim() || "—",
+      "",
+      "HASHTAGS",
+      tiktokHashtags.trim() || "—",
+      "",
+      "--------------------",
+      "",
+      "THUMBNAIL / COVER",
+      "",
+      "TEXT",
+      thumbnailText.trim() || "—",
+      "",
+      "FRAME",
+      formatTimestamp(
+        thumbnailSecond
+      ),
+      "",
+      "WHY",
+      thumbnailReason.trim() || "—",
+    ];
+
+    const value =
+      sections.join("\n");
+
+    try {
+      if (
+        navigator.clipboard &&
+        window.isSecureContext
+      ) {
+        await navigator.clipboard.writeText(
+          value
+        );
+      } else {
+        const textarea =
+          document.createElement(
+            "textarea"
+          );
+
+        textarea.value =
+          value;
+
+        textarea.setAttribute(
+          "readonly",
+          ""
+        );
+
+        textarea.style.position =
+          "fixed";
+
+        textarea.style.opacity =
+          "0";
+
+        document.body.appendChild(
+          textarea
+        );
+
+        textarea.select();
+
+        const copied =
+          document.execCommand(
+            "copy"
+          );
+
+        textarea.remove();
+
+        if (!copied) {
+          throw new Error(
+            "Clipboard fallback failed."
+          );
+        }
+      }
+
+      setCopyAllStatus(
+        "COPIED"
+      );
+
+      window.setTimeout(
+        () => {
+          setCopyAllStatus(
+            "IDLE"
+          );
+        },
+        2200
+      );
+    } catch {
+      setCopyAllStatus(
+        "ERROR"
+      );
+
+      window.setTimeout(
+        () => {
+          setCopyAllStatus(
+            "IDLE"
+          );
+        },
+        2200
+      );
+    }
+  }
+
   if (!renderedVideo) {
     return (
       <main className="min-h-screen bg-[#070a0f] px-4 py-8 text-white">
@@ -584,25 +710,49 @@ export default function PublishPage() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  generationStartedRef.current =
-                    true;
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={
+                    handleCopyAll
+                  }
+                  disabled={
+                    copyStatus ===
+                      "GENERATING" ||
+                    copyStatus !==
+                      "READY"
+                  }
+                  className="rounded-xl bg-lime-300 px-4 py-2.5 text-[11px] font-black tracking-[0.06em] text-slate-950 transition hover:bg-lime-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {copyAllStatus ===
+                  "COPIED"
+                    ? "✓ COPIED!"
+                    : copyAllStatus ===
+                        "ERROR"
+                      ? "COPY FAILED"
+                      : "COPY ALL"}
+                </button>
 
-                  void generateCopy();
-                }}
-                disabled={
-                  copyStatus ===
+                <button
+                  type="button"
+                  onClick={() => {
+                    generationStartedRef.current =
+                      true;
+
+                    void generateCopy();
+                  }}
+                  disabled={
+                    copyStatus ===
+                    "GENERATING"
+                  }
+                  className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-2.5 text-[11px] font-black tracking-[0.06em] text-slate-300 transition hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
+                >
+                  {copyStatus ===
                   "GENERATING"
-                }
-                className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-2.5 text-[11px] font-black tracking-[0.06em] text-slate-300 transition hover:border-white/20 hover:text-white disabled:cursor-wait disabled:opacity-50"
-              >
-                {copyStatus ===
-                "GENERATING"
-                  ? "GENERATING..."
-                  : "REGENERATE COPY"}
-              </button>
+                    ? "GENERATING..."
+                    : "REGENERATE COPY"}
+                </button>
+              </div>
             </div>
 
             {copyError ? (
