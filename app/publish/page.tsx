@@ -161,6 +161,11 @@ export default function PublishPage() {
       "IDLE" | "COPIED" | "ERROR"
     >("IDLE");
 
+  const [mobileUploadStatus, setMobileUploadStatus] = useState<
+    "IDLE" | "UPLOADING_VIDEO" | "UPLOADING_METADATA" | "SUCCESS" | "ERROR"
+  >("IDLE");
+  const [mobileUploadError, setMobileUploadError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!renderedVideo) {
       setPreviewUrl(null);
@@ -388,6 +393,112 @@ export default function PublishPage() {
     );
   }
 
+  async function handleSendToMobile() {
+    if (!renderedVideo || copyStatus !== "READY") return;
+
+    if (renderedVideo.size > 500 * 1024 * 1024) {
+      setMobileUploadError("El MP4 supera el límite de 500 MB.");
+      setMobileUploadStatus("ERROR");
+      return;
+    }
+
+    setMobileUploadStatus("UPLOADING_VIDEO");
+    setMobileUploadError(null);
+
+    try {
+      async function requestUploadUrl(
+        type: "video" | "metadata",
+        contentType: string,
+        fileSize: number,
+        projectId?: string
+      ) {
+        const response = await fetch("/api/mobile/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type,
+            contentType,
+            fileSize,
+            ...(projectId ? { projectId } : {}),
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "No se pudo generar la URL de subida.");
+        }
+
+        return data as { projectId: string; uploadUrl: string };
+      }
+
+      // El primer enlace crea el proyecto.
+      const videoUpload = await requestUploadUrl(
+        "video",
+        "video/mp4",
+        renderedVideo.size
+      );
+
+      // El MP4 viaja directo del navegador a R2, sin pasar por Vercel.
+      const videoResponse = await fetch(videoUpload.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "video/mp4" },
+        body: renderedVideo,
+      });
+
+      if (!videoResponse.ok) {
+        throw new Error(`No se pudo subir el MP4 a R2 (HTTP ${videoResponse.status}).`);
+      }
+
+      setMobileUploadStatus("UPLOADING_METADATA");
+
+      // Usar los valores actuales editados en Publish, sin llamar otra vez a OpenAI.
+      const metadata = {
+        projectId: videoUpload.projectId,
+        createdAt: new Date().toISOString(),
+        youtubeTitle: youtubeTitle.trim(),
+        youtubeDescription: youtubeDescription.trim(),
+        youtubeTags: youtubeTags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        tiktokCaption: tiktokCaption.trim(),
+        tiktokHashtags: tiktokHashtags.split(/\s+/).map((tag) => tag.trim()).filter(Boolean),
+        thumbnailTitle: thumbnailText.trim(),
+      };
+
+      const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], {
+        type: "application/json",
+      });
+
+      // Reutilizar el mismo proyecto para metadata.json.
+      const metadataUpload = await requestUploadUrl(
+        "metadata",
+        "application/json",
+        metadataBlob.size,
+        videoUpload.projectId
+      );
+
+      if (metadataUpload.projectId !== videoUpload.projectId) {
+        throw new Error("La metadata no pertenece al mismo proyecto.");
+      }
+
+      const metadataResponse = await fetch(metadataUpload.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: metadataBlob,
+      });
+
+      if (!metadataResponse.ok) {
+        throw new Error(`No se pudo subir la metadata a R2 (HTTP ${metadataResponse.status}).`);
+      }
+
+      setMobileUploadStatus("SUCCESS");
+    } catch (error) {
+      setMobileUploadError(
+        error instanceof Error ? error.message : "Error durante la transferencia."
+      );
+      setMobileUploadStatus("ERROR");
+    }
+  }
+
   async function handleCopyAll() {
     const sections = [
       "YOUTUBE",
@@ -592,15 +703,48 @@ export default function PublishPage() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={
-              handleDownload
-            }
-            className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-xs font-black tracking-[0.08em] text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06]"
-          >
-            ↓ DOWNLOAD MP4
-          </button>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-xs font-black tracking-[0.08em] text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06]"
+              >
+                ↓ DOWNLOAD MP4
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleSendToMobile()}
+                disabled={
+                  copyStatus !== "READY" ||
+                  mobileUploadStatus === "UPLOADING_VIDEO" ||
+                  mobileUploadStatus === "UPLOADING_METADATA" ||
+                  mobileUploadStatus === "SUCCESS"
+                }
+                className="rounded-xl bg-lime-300 px-4 py-3 text-xs font-black tracking-[0.08em] text-slate-950 transition hover:bg-lime-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {mobileUploadStatus === "UPLOADING_VIDEO"
+                  ? "SENDING VIDEO..."
+                  : mobileUploadStatus === "UPLOADING_METADATA"
+                    ? "SENDING METADATA..."
+                    : mobileUploadStatus === "SUCCESS"
+                      ? "✓ SENT TO MOBILE"
+                      : "SEND TO MOBILE"}
+              </button>
+            </div>
+
+            {mobileUploadStatus === "ERROR" && mobileUploadError && (
+              <p role="alert" className="max-w-sm text-xs text-red-400">
+                {mobileUploadError}
+              </p>
+            )}
+            {mobileUploadStatus === "SUCCESS" && (
+              <p role="status" className="text-xs text-lime-200">
+                MP4 y metadata enviados a R2.
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
