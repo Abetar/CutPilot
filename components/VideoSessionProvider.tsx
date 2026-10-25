@@ -93,6 +93,12 @@ export type EditPlan = {
   items: EditPlanItem[];
 };
 
+export type PublishContextInput = {
+  renderedVideo: File;
+  transcription: Transcription;
+  editPlan: EditPlan | null;
+};
+
 /*
   ========================================
   B-ROLL REVIEW
@@ -165,6 +171,15 @@ type VideoSessionContextType = {
 
   setRenderedVideo: (
     file: File | null
+  ) => void;
+
+  /*
+    Registra de forma conjunta el contexto que
+    necesita /publish, independientemente del
+    engine que haya generado el MP4 final.
+  */
+  setPublishContext: (
+    context: PublishContextInput
   ) => void;
 
   clearVideo: () => void;
@@ -263,6 +278,28 @@ export function VideoSessionProvider({
   ) {
     setEditPlanState(plan);
 
+    setBrollReviews({});
+  }
+
+  function setPublishContext(
+    context: PublishContextInput
+  ) {
+    setRenderedVideo(
+      context.renderedVideo
+    );
+
+    setTranscription(
+      context.transcription
+    );
+
+    setEditPlanState(
+      context.editPlan
+    );
+
+    /*
+      Un nuevo render final invalida cualquier
+      review de B-roll previo de Auto Edit.
+    */
     setBrollReviews({});
   }
 
@@ -660,6 +697,8 @@ export function VideoSessionProvider({
         setVideoFile,
 
         setRenderedVideo,
+
+        setPublishContext,
 
         clearVideo,
 

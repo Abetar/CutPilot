@@ -4,6 +4,43 @@ let loadingPromise: Promise<
   import("@ffmpeg/ffmpeg").FFmpeg
 > | null = null;
 
+/*
+  ==========================================
+  RESET FFMPEG
+  ==========================================
+
+  ffmpeg.wasm puede quedar inutilizable después
+  de errores fatales como:
+
+  - Out of memory
+  - memory access out of bounds
+  - Aborted()
+
+  En esos casos `loaded` no siempre es una señal
+  suficiente para saber si el Worker sigue sano.
+
+  Esta función permite descartar la instancia actual
+  y obligar a getFFmpeg() a crear una nueva.
+*/
+export function resetFFmpeg() {
+  if (ffmpegInstance) {
+    try {
+      ffmpegInstance.terminate();
+    } catch {
+      /*
+        Si el Worker ya murió por un error de WASM,
+        terminate también puede fallar.
+
+        No importa: igualmente descartamos todas
+        las referencias locales.
+      */
+    }
+  }
+
+  ffmpegInstance = null;
+  loadingPromise = null;
+}
+
 export async function getFFmpeg() {
   if (typeof window === "undefined") {
     throw new Error(
