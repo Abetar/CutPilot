@@ -231,20 +231,12 @@ export default function CutPilotHome() {
 
           <button
             type="button"
-            onClick={() =>
-              showNotice(
-                "B-Roll Engine será el siguiente engine de CutPilot."
-              )
-            }
+            onClick={() => router.push("/broll-engine")}
             className="group rounded-[2rem] border border-white/10 bg-white/[0.025] p-7 text-left transition hover:-translate-y-0.5 hover:border-violet-300/25 hover:bg-violet-300/[0.035] md:p-8"
           >
             <div className="flex items-start justify-between gap-4">
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-300/15 bg-violet-300/[0.06] text-xl text-violet-100">
                 ◉
-              </span>
-
-              <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-bold tracking-[0.14em] text-slate-400">
-                COMING SOON
               </span>
             </div>
 
