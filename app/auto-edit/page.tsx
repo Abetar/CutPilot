@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { useVideoSession } from "@/components/VideoSessionProvider";
 import { useBrollLibrary } from "@/components/BrollLibraryProvider";
@@ -99,6 +99,9 @@ function formatTimestamp(seconds: number) {
 
 export default function AutoEditPage() {
   const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const {
     video,
@@ -109,9 +112,16 @@ export default function AutoEditPage() {
     autoEditError,
     startAutoEdit,
     setRenderedVideo,
+    setVideoFile,
   } = useVideoSession();
 
-  const { library } = useBrollLibrary();
+  const {
+    library,
+    isConnecting,
+    error: brollError,
+    connectLibrary,
+    disconnectLibrary,
+  } = useBrollLibrary();
 
   const [metadata, setMetadata] = useState<VideoMetadata | null>(null);
 
@@ -155,12 +165,6 @@ export default function AutoEditPage() {
   */
   const [impactWordsEnabled, setImpactWordsEnabled] =
     useState(false);
-
-  useEffect(() => {
-    if (!video) {
-      router.replace("/");
-    }
-  }, [video, router]);
 
   const validation = useMemo<ValidationResult>(() => {
     const warnings: string[] = [];
@@ -423,8 +427,158 @@ export default function AutoEditPage() {
     };
   }, [isEditPlanOpen]);
 
+  function selectVideoFile(file?: File) {
+    if (!file) return;
+
+    if (
+      file.type !== "video/mp4" &&
+      !file.name.toLowerCase().endsWith(".mp4")
+    ) {
+      setUploadError("Por ahora Auto Edit acepta únicamente archivos MP4.");
+      return;
+    }
+
+    setUploadError(null);
+    setVideoFile(file);
+  }
+
+  function handleVideoInput(event: ChangeEvent<HTMLInputElement>) {
+    selectVideoFile(event.target.files?.[0]);
+    event.target.value = "";
+  }
+
+  function handleVideoDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragging(false);
+    selectVideoFile(event.dataTransfer.files?.[0]);
+  }
+
   if (!video) {
-    return null;
+    return (
+      <main className="min-h-screen px-5 py-5 md:px-8 md:py-7">
+        <div className="mx-auto max-w-6xl">
+          <header className="mb-10 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="rounded-xl border border-white/10 bg-white/[0.025] px-4 py-2 text-sm text-slate-400 transition hover:border-white/20 hover:text-white"
+            >
+              ← Volver
+            </button>
+
+            <div className="flex items-center gap-3">
+              {library ? (
+                <div className="flex items-center gap-2">
+                  <div className="hidden rounded-xl border border-lime-300/15 bg-lime-300/[0.05] px-3 py-2 sm:block">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-lime-300" />
+                      <span className="text-xs font-semibold text-lime-200">
+                        B-ROLL CONNECTED
+                      </span>
+                    </div>
+
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {library.catalog.totalAssets} assets · {library.rootHandle.name}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={disconnectLibrary}
+                    className="rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-xs text-slate-400 transition hover:border-red-300/20 hover:text-red-200"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={connectLibrary}
+                  disabled={isConnecting}
+                  className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] px-4 py-2 text-sm font-medium text-cyan-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isConnecting ? "Connecting..." : "Connect B-roll Library"}
+                </button>
+              )}
+
+              <div className="text-xl font-black tracking-[-0.05em]">
+                CUT<span className="text-lime-300">PILOT</span>
+              </div>
+            </div>
+          </header>
+
+          {brollError && (
+            <div className="mb-6 rounded-2xl border border-red-400/15 bg-red-400/[0.04] px-4 py-3 text-sm text-red-200">
+              {brollError}
+            </div>
+          )}
+
+          <section className="mb-8 max-w-3xl">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-lime-300/15 bg-lime-300/5 px-3 py-1 text-xs font-medium text-lime-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-lime-300" />
+              AUTO EDIT ENGINE
+            </div>
+
+            <h1 className="max-w-3xl text-5xl font-black leading-[0.95] tracking-[-0.06em] md:text-7xl">
+              Carga tu video{" "}
+              <span className="text-lime-300">ya cortado.</span>
+            </h1>
+
+            <p className="mt-6 max-w-2xl text-base leading-7 text-slate-400 md:text-lg">
+              Auto Edit se encarga del resto: B-roll, subtítulos, zooms,
+              impact words y render final.
+            </p>
+          </section>
+
+          {uploadError && (
+            <div className="mb-5 rounded-2xl border border-red-400/15 bg-red-400/[0.04] px-4 py-3 text-sm text-red-200">
+              {uploadError}
+            </div>
+          )}
+
+          <section
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleVideoDrop}
+            onClick={() => inputRef.current?.click()}
+            className={`group cursor-pointer rounded-[2rem] border border-dashed p-5 transition md:p-8 ${
+              dragging
+                ? "border-lime-300/70 bg-lime-300/[0.06]"
+                : "border-white/15 bg-white/[0.025] hover:border-lime-300/30 hover:bg-white/[0.04]"
+            }`}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept="video/mp4,.mp4"
+              onChange={handleVideoInput}
+              className="hidden"
+            />
+
+            <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[1.5rem] border border-white/[0.05] bg-black/10 px-6 text-center">
+              <div className="mb-7 flex h-16 w-16 items-center justify-center rounded-2xl border border-lime-300/15 bg-lime-300/[0.06] text-3xl text-lime-200 transition group-hover:scale-105">
+                ↑
+              </div>
+
+              <h2 className="text-2xl font-bold tracking-[-0.03em]">
+                Drop your edited video
+              </h2>
+
+              <p className="mt-2 text-sm text-slate-500">
+                Arrastra tu MP4 ya cortado aquí o haz clic para elegirlo.
+              </p>
+
+              <div className="mt-7 rounded-full border border-white/10 px-4 py-2 text-xs text-slate-400">
+                MP4 · El archivo permanece local en tu navegador
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
   }
 
   function handleLoadedMetadata(event: React.SyntheticEvent<HTMLVideoElement>) {
@@ -841,19 +995,62 @@ export default function AutoEditPage() {
   return (
     <main className="min-h-screen px-5 py-5 md:px-8 md:py-7">
       <div className="mx-auto max-w-6xl">
-        <header className="mb-10 flex items-center justify-between">
+        <header className="mb-10 flex flex-wrap items-center justify-between gap-3">
           <button
+            type="button"
             onClick={() => router.push("/")}
             className="rounded-xl border border-white/10 bg-white/[0.025] px-4 py-2 text-sm text-slate-400 transition hover:border-white/20 hover:text-white"
           >
             ← Volver
           </button>
 
-          <div className="text-xl font-black tracking-[-0.05em]">
-            CUT
-            <span className="text-lime-300">PILOT</span>
+          <div className="flex items-center gap-3">
+            {library ? (
+              <div className="flex items-center gap-2">
+                <div className="hidden rounded-xl border border-lime-300/15 bg-lime-300/[0.05] px-3 py-2 sm:block">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-lime-300" />
+                    <span className="text-xs font-semibold text-lime-200">
+                      B-ROLL CONNECTED
+                    </span>
+                  </div>
+
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {library.catalog.totalAssets} assets · {library.rootHandle.name}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={disconnectLibrary}
+                  className="rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-xs text-slate-400 transition hover:border-red-300/20 hover:text-red-200"
+                >
+                  Disconnect
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={connectLibrary}
+                disabled={isConnecting}
+                className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] px-4 py-2 text-sm font-medium text-cyan-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isConnecting ? "Connecting..." : "Connect B-roll Library"}
+              </button>
+            )}
+
+            <div className="text-xl font-black tracking-[-0.05em]">
+              CUT
+              <span className="text-lime-300">PILOT</span>
+            </div>
           </div>
         </header>
+
+        {brollError && (
+          <div className="mb-6 rounded-2xl border border-red-400/15 bg-red-400/[0.04] px-4 py-3 text-sm text-red-200">
+            {brollError}
+          </div>
+        )}
 
         <section className="mb-8">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-lime-300/15 bg-lime-300/5 px-3 py-1 text-xs font-medium text-lime-200">

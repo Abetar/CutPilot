@@ -1,15 +1,8 @@
 "use client";
 
-import {
-  ChangeEvent,
-  DragEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { useVideoSession } from "@/components/VideoSessionProvider";
 import { useBrollLibrary } from "@/components/BrollLibraryProvider";
 
 type Notice = {
@@ -17,19 +10,8 @@ type Notice = {
   message: string;
 };
 
-function formatBytes(bytes: number) {
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(0)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export default function CutPilotHome() {
   const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const { video, setVideoFile } = useVideoSession();
 
   const {
     library,
@@ -39,7 +21,6 @@ export default function CutPilotHome() {
     disconnectLibrary,
   } = useBrollLibrary();
 
-  const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   useEffect(() => {
@@ -59,58 +40,13 @@ export default function CutPilotHome() {
     });
   }
 
-  function selectFile(file?: File) {
-    if (!file) return;
-
-    if (
-      file.type !== "video/mp4" &&
-      !file.name.toLowerCase().endsWith(".mp4")
-    ) {
-      showNotice(
-        "Por ahora CutPilot acepta únicamente archivos MP4."
-      );
-      return;
-    }
-
-    setVideoFile(file);
-  }
-
-  function handleInput(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
-    selectFile(event.target.files?.[0]);
-    event.target.value = "";
-  }
-
-  function handleDrop(
-    event: DragEvent<HTMLDivElement>
-  ) {
-    event.preventDefault();
-    setDragging(false);
-
-    selectFile(
-      event.dataTransfer.files?.[0]
-    );
-  }
-
   async function logout() {
-    await fetch(
-      "/api/auth/logout",
-      {
-        method: "POST",
-      }
-    );
+    await fetch("/api/auth/logout", {
+      method: "POST",
+    });
 
     router.replace("/login");
     router.refresh();
-  }
-
-  function unavailable(
-    feature: string
-  ) {
-    showNotice(
-      `${feature} queda visible en Paso 1, pero todavía no se ejecuta.`
-    );
   }
 
   return (
@@ -130,9 +66,7 @@ export default function CutPilotHome() {
 
             <button
               type="button"
-              onClick={() =>
-                setNotice(null)
-              }
+              onClick={() => setNotice(null)}
               aria-label="Cerrar aviso"
               className="-mr-1 -mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-lg text-slate-500 transition hover:bg-white/5 hover:text-white"
             >
@@ -143,13 +77,11 @@ export default function CutPilotHome() {
       )}
 
       <div className="mx-auto max-w-6xl">
-        <header className="mb-12 flex items-center justify-between gap-4">
+        <header className="mb-14 flex items-center justify-between gap-4">
           <div>
             <div className="text-2xl font-black tracking-[-0.05em]">
               CUT
-              <span className="text-lime-300">
-                PILOT
-              </span>
+              <span className="text-lime-300">PILOT</span>
             </div>
 
             <p className="mt-1 text-xs tracking-[0.16em] text-slate-500">
@@ -170,22 +102,13 @@ export default function CutPilotHome() {
                   </div>
 
                   <p className="mt-1 text-[11px] text-slate-500">
-                    {
-                      library.catalog
-                        .totalAssets
-                    }{" "}
-                    assets ·{" "}
-                    {
-                      library.rootHandle
-                        .name
-                    }
+                    {library.catalog.totalAssets} assets · {library.rootHandle.name}
                   </p>
                 </div>
 
                 <button
-                  onClick={
-                    disconnectLibrary
-                  }
+                  type="button"
+                  onClick={disconnectLibrary}
                   className="rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-xs text-slate-400 transition hover:border-red-300/20 hover:text-red-200"
                 >
                   Disconnect
@@ -193,21 +116,17 @@ export default function CutPilotHome() {
               </div>
             ) : (
               <button
-                onClick={
-                  connectLibrary
-                }
-                disabled={
-                  isConnecting
-                }
+                type="button"
+                onClick={connectLibrary}
+                disabled={isConnecting}
                 className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] px-4 py-2 text-sm font-medium text-cyan-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isConnecting
-                  ? "Connecting..."
-                  : "Connect B-roll Library"}
+                {isConnecting ? "Connecting..." : "Connect B-roll Library"}
               </button>
             )}
 
             <button
+              type="button"
               onClick={logout}
               className="rounded-xl border border-white/10 bg-white/[0.025] px-4 py-2 text-sm text-slate-400 transition hover:border-white/20 hover:text-white"
             >
@@ -222,221 +141,175 @@ export default function CutPilotHome() {
           </div>
         )}
 
-        <section className="mb-8 max-w-3xl">
+        <section className="mb-10 max-w-3xl">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-300/15 bg-cyan-300/5 px-3 py-1 text-xs font-medium text-cyan-100">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" />
-            PASO 1 · LOCAL VIDEO PREVIEW
+            CUTPILOT ENGINES
           </div>
 
-          <h1 className="max-w-2xl text-5xl font-black leading-[0.95] tracking-[-0.06em] md:text-7xl">
-            Del video crudo al{" "}
-            <span className="text-lime-300">
-              Short listo.
-            </span>
+          <h1 className="max-w-3xl text-5xl font-black leading-[0.95] tracking-[-0.06em] md:text-7xl">
+            Elige cómo quieres{" "}
+            <span className="text-lime-300">editar.</span>
           </h1>
 
-          <p className="mt-6 max-w-xl text-base leading-7 text-slate-400 md:text-lg">
-            Selecciona un MP4. En este
-            paso el archivo permanece en
-            tu navegador: todavía no se
-            sube a ninguna nube.
+          <p className="mt-6 max-w-2xl text-base leading-7 text-slate-400 md:text-lg">
+            Cada engine resuelve una parte distinta de tu flujo de contenido.
+            Elige el que corresponda al material que quieres trabajar.
           </p>
         </section>
 
-        {!video ? (
-          <section
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() =>
-              setDragging(false)
-            }
-            onDrop={handleDrop}
-            onClick={() =>
-              inputRef.current?.click()
-            }
-            className={`group cursor-pointer rounded-[2rem] border border-dashed p-5 transition md:p-8 ${
-              dragging
-                ? "border-lime-300/70 bg-lime-300/[0.06]"
-                : "border-white/15 bg-white/[0.025] hover:border-white/30 hover:bg-white/[0.04]"
-            }`}
+        <section className="grid gap-5 lg:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => router.push("/auto-edit")}
+            className="group relative overflow-hidden rounded-[2rem] border border-lime-300/25 bg-lime-300 p-7 text-left text-black transition hover:-translate-y-0.5 hover:bg-lime-200 md:p-8 lg:col-span-2"
           >
-            <input
-              ref={inputRef}
-              type="file"
-              accept="video/mp4,.mp4"
-              onChange={
-                handleInput
-              }
-              className="hidden"
-            />
+            <div className="absolute right-7 top-7 rounded-full bg-black/10 px-3 py-1 text-[11px] font-black tracking-[0.14em]">
+              READY
+            </div>
 
-            <div className="flex min-h-[330px] flex-col items-center justify-center rounded-[1.5rem] border border-white/[0.05] bg-black/10 px-6 text-center">
-              <div className="mb-7 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-3xl transition group-hover:scale-105">
-                ↑
-              </div>
-
-              <h2 className="text-2xl font-bold tracking-[-0.03em]">
-                Drop video
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Arrastra un MP4 aquí o
-                haz clic para elegirlo.
+            <div className="max-w-3xl">
+              <p className="text-xs font-black tracking-[0.18em] text-black/50">
+                MAIN WORKFLOW
               </p>
 
-              <div className="mt-7 rounded-full border border-white/10 px-4 py-2 text-xs text-slate-400">
-                MP4 · Optimizado
-                inicialmente para 9:16
+              <div className="mt-4 flex items-center gap-3">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/10 text-2xl">
+                  ✦
+                </span>
+
+                <h2 className="text-3xl font-black tracking-[-0.04em] md:text-4xl">
+                  AUTO EDIT ENGINE
+                </h2>
+              </div>
+
+              <p className="mt-5 max-w-2xl text-base leading-7 text-black/65 md:text-lg">
+                Convierte un video talking-head ya cortado en una edición lista:
+                B-roll, subtítulos, zooms, impact words y render final.
+              </p>
+
+              <div className="mt-7 flex items-center gap-2 text-sm font-black">
+                START EDIT
+                <span className="text-xl transition group-hover:translate-x-1">
+                  →
+                </span>
               </div>
             </div>
-          </section>
-        ) : (
-          <section className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]">
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.025] p-4 md:p-5">
-              <div className="relative overflow-hidden rounded-[1.4rem] bg-black">
-                <video
-                  src={video.url}
-                  controls
-                  playsInline
-                  className="mx-auto max-h-[68vh] w-full object-contain"
-                />
-              </div>
+          </button>
 
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 px-1">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-200">
-                    {
-                      video.file
-                        .name
-                    }
-                  </p>
+          <button
+            type="button"
+            onClick={() => router.push("/cutting-engine")}
+            className="group rounded-[2rem] border border-white/10 bg-white/[0.025] p-7 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-cyan-300/[0.035] md:p-8"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.06] text-xl text-cyan-100">
+                ✂
+              </span>
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    {formatBytes(
-                      video.file
-                        .size
-                    )}{" "}
-                    · Preview local
-                  </p>
-                </div>
-
-                <button
-                  onClick={() =>
-                    inputRef.current?.click()
-                  }
-                  className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:border-white/25 hover:text-white"
-                >
-                  Cambiar video
-                </button>
-
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept="video/mp4,.mp4"
-                  onChange={
-                    handleInput
-                  }
-                  className="hidden"
-                />
-              </div>
+              <span className="rounded-full border border-amber-300/15 bg-amber-300/[0.06] px-3 py-1 text-[10px] font-bold tracking-[0.14em] text-amber-200">
+                EXPERIMENTAL
+              </span>
             </div>
 
-            <aside className="flex flex-col gap-4">
-              <div className="rounded-[2rem] border border-white/10 bg-white/[0.025] p-6">
-                <p className="mb-5 text-xs font-semibold tracking-[0.18em] text-slate-500">
-                  WHAT DO YOU WANT TO
-                  DO?
+            <h2 className="mt-7 text-2xl font-black tracking-[-0.04em]">
+              CUTTING ENGINE
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Analiza video crudo e intenta eliminar pausas, intentos repetidos y
+              secciones innecesarias antes de la edición.
+            </p>
+
+            <div className="mt-7 flex items-center gap-2 text-sm font-bold text-cyan-100">
+              OPEN ENGINE
+              <span className="text-lg transition group-hover:translate-x-1">
+                →
+              </span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              showNotice(
+                "B-Roll Engine será el siguiente engine de CutPilot."
+              )
+            }
+            className="group rounded-[2rem] border border-white/10 bg-white/[0.025] p-7 text-left transition hover:-translate-y-0.5 hover:border-violet-300/25 hover:bg-violet-300/[0.035] md:p-8"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-300/15 bg-violet-300/[0.06] text-xl text-violet-100">
+                ◉
+              </span>
+
+              <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-bold tracking-[0.14em] text-slate-400">
+                COMING SOON
+              </span>
+            </div>
+
+            <h2 className="mt-7 text-2xl font-black tracking-[-0.04em]">
+              B-ROLL ENGINE
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Convierte una pista de voz en un video completamente visual usando
+              tu biblioteca de B-roll, subtítulos e impact words.
+            </p>
+
+            <div className="mt-7 flex items-center gap-2 text-sm font-bold text-violet-200">
+              VOICE-OVER → FULL VIDEO
+            </div>
+          </button>
+        </section>
+
+        <section className="mt-6 grid gap-4 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => router.push("/publish")}
+            className="group rounded-2xl border border-white/[0.07] bg-white/[0.015] px-5 py-4 text-left transition hover:border-white/15 hover:bg-white/[0.03]"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold tracking-[0.14em] text-slate-600">
+                  UTILITY
                 </p>
 
-                <button
-                  onClick={() =>
-                    router.push(
-                      "/auto-edit"
-                    )
-                  }
-                  className="group mb-3 w-full rounded-2xl border border-lime-300/25 bg-lime-300 px-5 py-5 text-left text-black transition hover:bg-lime-200"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-black">
-                      AUTO EDIT
-                    </span>
-
-                    <span className="text-xl transition group-hover:translate-x-1">
-                      →
-                    </span>
-                  </div>
-
-                  <p className="mt-1 text-sm text-black/65">
-                    Generar una primera
-                    edición automática.
-                  </p>
-                </button>
-
-                <button
-                  onClick={() =>
-                    unavailable(
-                      "Publish Existing Video"
-                    )
-                  }
-                  className="group w-full rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-5 text-left transition hover:border-cyan-300/25 hover:bg-cyan-300/[0.04]"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-black">
-                      PUBLISH EXISTING
-                      VIDEO
-                    </span>
-
-                    <span className="text-xl text-cyan-200 transition group-hover:translate-x-1">
-                      →
-                    </span>
-                  </div>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Usar este MP4
-                    directamente en
-                    Publisher.
-                  </p>
-                </button>
-              </div>
-
-              <div className="rounded-[2rem] border border-white/10 bg-white/[0.025] p-6">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-300">
-                    Archivo
-                  </span>
-
-                  <span className="rounded-full bg-lime-300/10 px-2.5 py-1 text-xs font-medium text-lime-200">
-                    LOCAL
-                  </span>
-                </div>
-
-                <p className="mt-3 text-sm leading-6 text-slate-500">
-                  Nada se persiste todavía.
-                  Si recargas o cierras la
-                  pestaña, CutPilot pierde
-                  este video
-                  intencionalmente.
+                <p className="mt-1 font-semibold text-slate-300">
+                  Publish Package
                 </p>
               </div>
-            </aside>
-          </section>
-        )}
+
+              <span className="text-slate-600 transition group-hover:translate-x-1 group-hover:text-slate-300">
+                →
+              </span>
+            </div>
+          </button>
+
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.01] px-5 py-4">
+            <p className="text-xs font-semibold tracking-[0.14em] text-slate-600">
+              B-ROLL LIBRARY
+            </p>
+
+            <p className="mt-1 text-sm text-slate-500">
+              {library
+                ? `${library.catalog.totalAssets} assets disponibles para tus engines.`
+                : "Conecta tu biblioteca local para Auto Edit y B-Roll Engine."}
+            </p>
+          </div>
+        </section>
       </div>
 
       <style jsx global>{`
         @keyframes toastIn {
           from {
             opacity: 0;
-            transform: translateY(-10px)
-              scale(0.97);
+            transform: translateY(-10px) scale(0.97);
           }
 
           to {
             opacity: 1;
-            transform: translateY(0)
-              scale(1);
+            transform: translateY(0) scale(1);
           }
         }
       `}</style>
