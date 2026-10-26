@@ -1949,8 +1949,11 @@ export async function renderVoiceOverVideo(
       ETAPA 1 — B-ROLL SECUENCIAL
       ==========================================
     */
-    const segmentOutputNames:
-      string[] = [];
+    const renderedSegments:
+      Array<{
+        fileName: string;
+        duration: number;
+      }> = [];
 
     for (
       let index = 0;
@@ -2039,6 +2042,7 @@ export async function renderVoiceOverVideo(
                 options.height
               )}`,
               "setsar=1",
+              "setpts=PTS-STARTPTS",
               "fps=30",
               "format=yuv420p",
             ].join(","),
@@ -2076,15 +2080,24 @@ export async function renderVoiceOverVideo(
         segmentName
       );
 
-      segmentOutputNames.push(
-        segmentName
-      );
+      renderedSegments.push({
+        fileName:
+          segmentName,
+
+        duration:
+          segmentDuration,
+      });
     }
 
     /*
       ==========================================
       ETAPA 2 — CONCAT VISUAL
       ==========================================
+
+      Importante:
+      no confiamos en la duración inferida por MP4.
+      Cada segmento declara explícitamente la duración
+      del Visual Plan, igual que subtitles/Impact Words.
     */
     reportProgress(
       69,
@@ -2092,15 +2105,71 @@ export async function renderVoiceOverVideo(
       "Construyendo timeline visual..."
     );
 
-    const videoConcatLines =
-      [
+    const videoConcatLines:
+      string[] = [
         "ffconcat version 1.0",
-
-        ...segmentOutputNames.map(
-          (fileName) =>
-            `file '${fileName}'`
-        ),
       ];
+
+    for (
+      const renderedSegment of
+      renderedSegments
+    ) {
+      videoConcatLines.push(
+        `file '${renderedSegment.fileName}'`
+      );
+
+      videoConcatLines.push(
+        `duration ${Math.max(
+          0.001,
+          renderedSegment.duration
+        ).toFixed(6)}`
+      );
+    }
+
+    /*
+      ffconcat aplica la duración del último item de
+      forma fiable cuando repetimos la última entrada.
+
+      Subtitles e Impact Words ya usan esta misma fórmula.
+    */
+    if (
+      renderedSegments.length >
+      0
+    ) {
+      videoConcatLines.push(
+        `file '${renderedSegments[
+          renderedSegments.length -
+            1
+        ].fileName}'`
+      );
+    }
+
+    const plannedVisualDuration =
+      renderedSegments.reduce(
+        (
+          total,
+          renderedSegment
+        ) =>
+          total +
+          renderedSegment.duration,
+        0
+      );
+
+    if (
+      Math.abs(
+        plannedVisualDuration -
+          options.duration
+      ) >
+      0.02
+    ) {
+      throw new Error(
+        `La duración planeada de los segmentos (${plannedVisualDuration.toFixed(
+          3
+        )} s) no coincide con la duración del render (${options.duration.toFixed(
+          3
+        )} s).`
+      );
+    }
 
     await ffmpeg.writeFile(
       videoConcatName,
