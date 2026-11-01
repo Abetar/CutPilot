@@ -1129,6 +1129,9 @@ export default function BrollEnginePage() {
               broll:
                 item.broll,
 
+              motionGraphic:
+                null,
+
               reason:
                 item.reason,
             })

@@ -10,6 +10,15 @@ import {
 
 import { extractAudioFromVideo } from "@/lib/extractAudio";
 
+import type {
+  MotionGraphicRequest,
+} from "@/lib/motion/types";
+
+export type {
+  MotionGraphicRequest,
+  MotionGraphicType,
+} from "@/lib/motion/types";
+
 export type SelectedVideo = {
   file: File;
   url: string;
@@ -52,7 +61,8 @@ export type EditActionType =
   | "COMPARISON"
   | "PRICE"
   | "QUESTION"
-  | "PRODUCT_NAME";
+  | "PRODUCT_NAME"
+  | "MOTION_GRAPHIC";
 
 export type EffectPreset =
   | "NONE"
@@ -84,6 +94,10 @@ export type EditPlanItem = {
   textOverlay: string | null;
 
   broll: BrollRequest | null;
+
+  motionGraphic:
+    | MotionGraphicRequest
+    | null;
 
   reason: string;
 };

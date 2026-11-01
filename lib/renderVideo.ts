@@ -1,4 +1,13 @@
 import { getFFmpeg } from "@/lib/extractAudio";
+import { buildMotionTimeline } from "@/lib/motion/buildMotionTimeline";
+
+import type {
+  RenderMotionGraphicSegment,
+} from "@/lib/motion/types";
+
+export type {
+  RenderMotionGraphicSegment,
+} from "@/lib/motion/types";
 
 export type RenderBrollInput = {
   assetId: string;
@@ -27,6 +36,21 @@ export type RenderBrollSegment = {
 
   end: number;
 };
+
+/*
+  Segmento interno del renderer.
+
+  sourceOffset indica desde qué segundo del archivo
+  B-roll debe empezar a reproducirse.
+
+  Es necesario cuando un Motion Graphic corta un
+  B-roll en dos: el segundo fragmento continúa el
+  clip original en vez de reiniciarlo desde 0.
+*/
+type ResolvedRenderBrollSegment =
+  RenderBrollSegment & {
+    sourceOffset: number;
+  };
 
 export type RenderEffectType =
   | "SUBTLE_PUNCH_IN";
@@ -96,6 +120,9 @@ export type RenderVideoOptions = {
   subtitleSegments?: RenderSubtitleSegment[];
 
   impactSegments?: RenderImpactSegment[];
+
+  motionGraphicSegments?:
+    RenderMotionGraphicSegment[];
 
   onProgress?: (
     update: RenderProgressUpdate
@@ -1845,6 +1872,7 @@ export async function prepareRenderWorkspace(
   - subtítulos con highlight + pop por palabra
   - IMPACT WORDS opcional en KEY_STATEMENT
   - click de cámara por palabra durante IMPACT WORDS
+  - AUTO MOTION GRAPHICS V0: STAT_CALLOUT
   - MP4 H.264
 
   Todavía NO aplica:
@@ -1959,7 +1987,8 @@ export async function renderVideoFromWorkspace(
     ======================================
   */
 
-  const brollSegments =
+  const normalizedBrollSegments:
+    ResolvedRenderBrollSegment[] =
     options.brollSegments
       .filter(
         (segment) =>
@@ -1984,6 +2013,8 @@ export async function renderVideoFromWorkspace(
             segment.end,
             options.duration
           ),
+
+          sourceOffset: 0,
         })
       )
       .sort(
@@ -2032,6 +2063,479 @@ export async function renderVideoFromWorkspace(
       )
       .sort(
         (a, b) =>
+          a.start -
+          b.start
+      );
+
+  /*
+    ======================================
+    NORMALIZAR MOTION GRAPHICS
+    ======================================
+  */
+
+  const motionGraphicSegments:
+    RenderMotionGraphicSegment[] =
+    (
+      options.motionGraphicSegments ??
+      []
+    )
+      .filter(
+        (segment) =>
+          Number.isFinite(
+            segment.start
+          ) &&
+          Number.isFinite(
+            segment.end
+          ) &&
+          segment.start >=
+            0 &&
+          segment.end >
+            segment.start &&
+          segment.start <
+            options.duration
+      )
+      .flatMap(
+        (
+          segment
+        ): RenderMotionGraphicSegment[] => {
+          const graphic =
+            segment.graphic;
+
+          if (
+            graphic.type ===
+            "STAT_CALLOUT"
+          ) {
+            const primary =
+              graphic.primary.trim();
+
+            if (!primary) {
+              return [];
+            }
+
+            return [
+              {
+                ...segment,
+
+                end:
+                  Math.min(
+                    segment.end,
+                    options.duration
+                  ),
+
+                graphic: {
+                  ...graphic,
+
+                  label:
+                    graphic.label?.trim() ||
+                    null,
+
+                  primary,
+
+                  secondary:
+                    graphic.secondary?.trim() ||
+                    null,
+                },
+              },
+            ];
+          }
+
+          if (
+            graphic.type ===
+            "COMPARISON"
+          ) {
+            const leftTitle =
+              graphic.leftTitle.trim();
+
+            const rightTitle =
+              graphic.rightTitle.trim();
+
+            if (
+              !leftTitle ||
+              !rightTitle
+            ) {
+              return [];
+            }
+
+            return [
+              {
+                ...segment,
+
+                end:
+                  Math.min(
+                    segment.end,
+                    options.duration
+                  ),
+
+                graphic: {
+                  ...graphic,
+
+                  label:
+                    graphic.label?.trim() ||
+                    null,
+
+                  leftTitle,
+
+                  leftDetail:
+                    graphic.leftDetail?.trim() ||
+                    null,
+
+                  rightTitle,
+
+                  rightDetail:
+                    graphic.rightDetail?.trim() ||
+                    null,
+                },
+              },
+            ];
+          }
+
+          if (
+            graphic.type ===
+            "PROCESS_FLOW"
+          ) {
+            const steps =
+              graphic.steps
+                .map(
+                  (step) => ({
+                    title:
+                      step.title.trim(),
+
+                    detail:
+                      step.detail?.trim() ||
+                      null,
+                  })
+                )
+                .filter(
+                  (step) =>
+                    step.title.length >
+                    0
+                )
+                .slice(
+                  0,
+                  5
+                );
+
+            if (
+              steps.length <
+              3
+            ) {
+              return [];
+            }
+
+            return [
+              {
+                ...segment,
+
+                end:
+                  Math.min(
+                    segment.end,
+                    options.duration
+                  ),
+
+                graphic: {
+                  ...graphic,
+
+                  label:
+                    graphic.label?.trim() ||
+                    null,
+
+                  steps,
+                },
+
+                stepRevealAt:
+                  segment.stepRevealAt
+                    ?.slice(
+                      0,
+                      steps.length
+                    ) ??
+                  null,
+              },
+            ];
+          }
+
+          if (
+            graphic.type ===
+            "KEY_POINTS"
+          ) {
+            const points =
+              graphic.points
+                .map(
+                  (point) => ({
+                    title:
+                      point.title.trim(),
+
+                    detail:
+                      point.detail?.trim() ||
+                      null,
+                  })
+                )
+                .filter(
+                  (point) =>
+                    point.title.length >
+                    0
+                )
+                .slice(
+                  0,
+                  5
+                );
+
+            if (
+              points.length <
+              2
+            ) {
+              return [];
+            }
+
+            return [
+              {
+                ...segment,
+
+                end:
+                  Math.min(
+                    segment.end,
+                    options.duration
+                  ),
+
+                graphic: {
+                  ...graphic,
+
+                  label:
+                    graphic.label?.trim() ||
+                    null,
+
+                  points,
+                },
+
+                pointRevealAt:
+                  segment.pointRevealAt
+                    ?.slice(
+                      0,
+                      points.length
+                    ) ??
+                  null,
+              },
+            ];
+          }
+
+          return [];
+        }
+      )
+      .sort(
+        (a, b) =>
+          a.start -
+          b.start
+      );
+
+  /*
+    ======================================
+    BLINDAJE MOTION GRAPHIC VS B-ROLL
+    ======================================
+
+    Regla de composición:
+    Motion Graphic siempre gana sobre B-roll.
+
+    No confiamos únicamente en el Editorial Engine.
+    Incluso si dos items vecinos se solapan por unos
+    frames, el renderer elimina físicamente el B-roll
+    de ese intervalo antes de construir FFmpeg.
+
+    Si el Motion corta un B-roll por la mitad:
+    - conservamos el fragmento anterior,
+    - conservamos el fragmento posterior,
+    - y sourceOffset hace que el segundo continúe
+      desde el punto correcto del archivo original.
+  */
+
+  const MOTION_BROLL_EPSILON =
+    0.001;
+
+  const MIN_BROLL_FRAGMENT_DURATION =
+    0.05;
+
+  type BlockedRange = {
+    start: number;
+    end: number;
+  };
+
+  /*
+    Unimos Motion Graphics contiguos/solapados para
+    simplificar la resta de intervalos.
+  */
+  const motionBlockedRanges =
+    motionGraphicSegments.reduce<
+      BlockedRange[]
+    >(
+      (
+        ranges,
+        segment
+      ) => {
+        const start =
+          Math.max(
+            0,
+            segment.start
+          );
+
+        const end =
+          Math.min(
+            options.duration,
+            segment.end
+          );
+
+        if (
+          end <=
+          start
+        ) {
+          return ranges;
+        }
+
+        const previous =
+          ranges[
+            ranges.length -
+              1
+          ];
+
+        if (
+          !previous ||
+          start >
+            previous.end +
+              MOTION_BROLL_EPSILON
+        ) {
+          ranges.push({
+            start,
+            end,
+          });
+
+          return ranges;
+        }
+
+        previous.end =
+          Math.max(
+            previous.end,
+            end
+          );
+
+        return ranges;
+      },
+      []
+    );
+
+  const brollSegments:
+    ResolvedRenderBrollSegment[] =
+    normalizedBrollSegments
+      .flatMap(
+        (
+          segment
+        ): ResolvedRenderBrollSegment[] => {
+          let fragments:
+            ResolvedRenderBrollSegment[] =
+            [
+              segment,
+            ];
+
+          for (
+            const blockedRange of
+            motionBlockedRanges
+          ) {
+            if (
+              fragments.length ===
+              0
+            ) {
+              break;
+            }
+
+            fragments =
+              fragments.flatMap(
+                (
+                  fragment
+                ): ResolvedRenderBrollSegment[] => {
+                  /*
+                    Sin intersección.
+                  */
+                  if (
+                    blockedRange.end <=
+                      fragment.start +
+                        MOTION_BROLL_EPSILON ||
+                    blockedRange.start >=
+                      fragment.end -
+                        MOTION_BROLL_EPSILON
+                  ) {
+                    return [
+                      fragment,
+                    ];
+                  }
+
+                  const result:
+                    ResolvedRenderBrollSegment[] =
+                    [];
+
+                  /*
+                    Parte izquierda:
+                    conserva el mismo sourceOffset.
+                  */
+                  const leftEnd =
+                    Math.min(
+                      fragment.end,
+                      blockedRange.start
+                    );
+
+                  if (
+                    leftEnd -
+                      fragment.start >=
+                    MIN_BROLL_FRAGMENT_DURATION
+                  ) {
+                    result.push({
+                      ...fragment,
+
+                      end:
+                        leftEnd,
+                    });
+                  }
+
+                  /*
+                    Parte derecha:
+                    continúa el archivo original desde
+                    el segundo correspondiente al tiempo
+                    que acabamos de saltar.
+                  */
+                  const rightStart =
+                    Math.max(
+                      fragment.start,
+                      blockedRange.end
+                    );
+
+                  if (
+                    fragment.end -
+                      rightStart >=
+                    MIN_BROLL_FRAGMENT_DURATION
+                  ) {
+                    result.push({
+                      ...fragment,
+
+                      start:
+                        rightStart,
+
+                      sourceOffset:
+                        fragment.sourceOffset +
+                        (
+                          rightStart -
+                          fragment.start
+                        ),
+                    });
+                  }
+
+                  return result;
+                }
+              );
+          }
+
+          return fragments;
+        }
+      )
+      .sort(
+        (
+          a,
+          b
+        ) =>
           a.start -
           b.start
       );
@@ -2669,6 +3173,186 @@ export async function renderVideoFromWorkspace(
     }
   }
 
+  /*
+    ======================================
+    INPUT AUTO MOTION GRAPHICS
+    ======================================
+
+    Mismo principio que captions e Impact Words:
+
+    - Canvas genera estados PNG RGBA.
+    - ffconcat los convierte en UN timeline.
+    - FFmpeg recibe UN solo input de Motion Graphics.
+    - fuera de los segmentos el timeline es transparente.
+  */
+
+  const motionFilesToDelete: string[] =
+    [];
+
+  let motionTimelineInputIndex:
+    | number
+    | null = null;
+
+  if (
+    motionGraphicSegments.length >
+    0
+  ) {
+    reportProgress(
+      14,
+      "PREPARING",
+      "Preparando Auto Motion Graphics..."
+    );
+
+    const motionTimeline =
+      await buildMotionTimeline({
+        width:
+          Math.round(
+            options.width
+          ),
+
+        height:
+          Math.round(
+            options.height
+          ),
+
+        duration:
+          options.duration,
+
+        segments:
+          motionGraphicSegments,
+      });
+
+    const motionFileByKey =
+      new Map<
+        string,
+        string
+      >();
+
+    for (
+      let assetIndex = 0;
+      assetIndex <
+      motionTimeline.assets.length;
+      assetIndex += 1
+    ) {
+      const asset =
+        motionTimeline.assets[
+          assetIndex
+        ];
+
+      const fileName =
+        `cutpilot-motion-${assetIndex}-${renderId}.png`;
+
+      await ffmpeg.writeFile(
+        fileName,
+        asset.data
+      );
+
+      motionFilesToDelete.push(
+        fileName
+      );
+
+      motionFileByKey.set(
+        asset.key,
+        fileName
+      );
+    }
+
+    if (
+      motionTimeline.frames.length >
+      0
+    ) {
+      const concatName =
+        `cutpilot-motion-timeline-${renderId}.ffconcat`;
+
+      const concatLines: string[] =
+        [
+          "ffconcat version 1.0",
+        ];
+
+      for (
+        const frame of
+        motionTimeline.frames
+      ) {
+        const fileName =
+          motionFileByKey.get(
+            frame.assetKey
+          );
+
+        if (!fileName) {
+          throw new Error(
+            `No se pudo resolver el frame de Motion Graphics ${frame.assetKey}.`
+          );
+        }
+
+        concatLines.push(
+          `file '${fileName}'`
+        );
+
+        concatLines.push(
+          `duration ${Math.max(
+            0.001,
+            frame.duration
+          ).toFixed(6)}`
+        );
+      }
+
+      const lastFrame =
+        motionTimeline.frames[
+          motionTimeline.frames.length -
+            1
+        ];
+
+      const lastFileName =
+        motionFileByKey.get(
+          lastFrame.assetKey
+        );
+
+      if (!lastFileName) {
+        throw new Error(
+          "No se pudo resolver el último frame de Motion Graphics."
+        );
+      }
+
+      /*
+        Igual que captions: duplicamos el último archivo
+        para que ffconcat respete su duración.
+      */
+      concatLines.push(
+        `file '${lastFileName}'`
+      );
+
+      await ffmpeg.writeFile(
+        concatName,
+        new TextEncoder().encode(
+          concatLines.join(
+            "\n"
+          )
+        )
+      );
+
+      motionFilesToDelete.push(
+        concatName
+      );
+
+      motionTimelineInputIndex =
+        nextAuxInputIndex;
+
+      nextAuxInputIndex +=
+        1;
+
+      args.push(
+        "-f",
+        "concat",
+
+        "-safe",
+        "0",
+
+        "-i",
+        concatName
+      );
+    }
+  }
+
   reportProgress(
     16,
     "PREPARING",
@@ -3262,6 +3946,11 @@ export async function renderVideoFromWorkspace(
           segment.start
         ).toFixed(3);
 
+      const sourceOffset =
+        segment.sourceOffset.toFixed(
+          3
+        );
+
       const brollLabel =
         `broll_${segmentIndex}`;
 
@@ -3274,7 +3963,7 @@ export async function renderVideoFromWorkspace(
       */
       filters.push(
         `[${inputIndex}:v]` +
-          `trim=duration=${segmentDuration},` +
+          `trim=start=${sourceOffset}:duration=${segmentDuration},` +
           `setpts=PTS-STARTPTS+${start}/TB,` +
           `scale=${Math.round(
             options.width
@@ -3308,6 +3997,48 @@ export async function renderVideoFromWorkspace(
         outputLabel;
     }
   );
+
+  /*
+    ======================================
+    AUTO MOTION GRAPHICS
+    ======================================
+
+    Se coloca DESPUÉS del B-roll y ANTES de Impact Words
+    y captions. El timeline es transparente fuera de
+    sus segmentos y full-screen dentro de STAT_CALLOUT.
+  */
+
+  if (
+    motionTimelineInputIndex !==
+    null
+  ) {
+    const motionTimelineLabel =
+      "motion_timeline";
+
+    const motionOutputLabel =
+      "motion_video";
+
+    filters.push(
+      `[${motionTimelineInputIndex}:v]` +
+        `format=rgba,` +
+        `fps=30,` +
+        `setpts=PTS-STARTPTS` +
+        `[${motionTimelineLabel}]`
+    );
+
+    filters.push(
+      `[${currentVideoLabel}]` +
+        `[${motionTimelineLabel}]` +
+        `overlay=0:0:` +
+        `eof_action=pass:` +
+        `shortest=0:` +
+        `repeatlast=0` +
+        `[${motionOutputLabel}]`
+    );
+
+    currentVideoLabel =
+      motionOutputLabel;
+  }
 
   /*
     ======================================
@@ -3644,6 +4375,19 @@ export async function renderVideoFromWorkspace(
     for (
       const fileName of
       subtitleFilesToDelete
+    ) {
+      try {
+        await ffmpeg.deleteFile(
+          fileName
+        );
+      } catch {
+        // Cleanup best effort.
+      }
+    }
+
+    for (
+      const fileName of
+      motionFilesToDelete
     ) {
       try {
         await ffmpeg.deleteFile(

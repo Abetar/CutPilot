@@ -1,0 +1,183 @@
+export type MotionGraphicType =
+  | "STAT_CALLOUT"
+  | "COMPARISON"
+  | "PROCESS_FLOW"
+  | "KEY_POINTS";
+
+export type StatCalloutMotionGraphicRequest = {
+  type: "STAT_CALLOUT";
+
+  label: string | null;
+
+  primary: string;
+
+  secondary: string | null;
+};
+
+export type ComparisonEmphasis =
+  | "LEFT"
+  | "RIGHT"
+  | "NEUTRAL";
+
+export type ComparisonMotionGraphicRequest = {
+  type: "COMPARISON";
+
+  /*
+    Contexto corto de la comparación.
+
+    Ejemplos:
+    "¿CUÁL CONVIENE?"
+    "ANTES VS AHORA"
+  */
+  label: string | null;
+
+  /*
+    Lado A.
+  */
+  leftTitle: string;
+
+  leftDetail: string | null;
+
+  /*
+    Lado B.
+  */
+  rightTitle: string;
+
+  rightDetail: string | null;
+
+  /*
+    Solo se usa cuando la narración favorece
+    explícitamente un lado.
+
+    NEUTRAL evita inventar un ganador.
+  */
+  emphasis: ComparisonEmphasis;
+};
+
+export type ProcessFlowStep = {
+  title: string;
+
+  detail: string | null;
+};
+
+export type ProcessFlowMotionGraphicRequest = {
+  type: "PROCESS_FLOW";
+
+  /*
+    Contexto corto del flujo.
+
+    Ejemplos:
+    "MI FLUJO"
+    "CÓMO FUNCIONA"
+  */
+  label: string | null;
+
+  /*
+    V0 soporta exclusivamente flujos lineales
+    de 3 a 5 pasos.
+  */
+  steps: ProcessFlowStep[];
+};
+
+export type KeyPoint = {
+  title: string;
+
+  detail: string | null;
+};
+
+export type KeyPointsMotionGraphicRequest = {
+  type: "KEY_POINTS";
+
+  /*
+    Contexto corto de la lista.
+
+    Ejemplos:
+    "3 RAZONES"
+    "LO QUE NECESITAS"
+    "PUNTOS CLAVE"
+  */
+  label: string | null;
+
+  /*
+    V0 soporta listas de 2 a 5 puntos.
+
+    A diferencia de PROCESS_FLOW, estos elementos
+    NO implican secuencia ni dependencia.
+  */
+  points: KeyPoint[];
+};
+
+export type MotionGraphicRequest =
+  | StatCalloutMotionGraphicRequest
+  | ComparisonMotionGraphicRequest
+  | ProcessFlowMotionGraphicRequest
+  | KeyPointsMotionGraphicRequest;
+
+export type RenderMotionGraphicSegment = {
+  start: number;
+
+  end: number;
+
+  graphic: MotionGraphicRequest;
+
+  /*
+    Timestamp absoluto opcional para el reveal
+    de la segunda parte del visual.
+
+    STAT_CALLOUT:
+    secondary
+
+    COMPARISON:
+    rightTitle
+
+    Si no se encuentra en word timestamps,
+    Motion Engine usa timing editorial.
+  */
+  secondaryRevealAt?:
+    | number
+    | null;
+
+  /*
+    PROCESS_FLOW:
+    timestamp absoluto opcional para cada paso.
+
+    El índice corresponde a graphic.steps[index].
+  */
+  stepRevealAt?:
+    | Array<
+        number |
+        null
+      >
+    | null;
+
+  /*
+    KEY_POINTS:
+    timestamp absoluto opcional para cada punto.
+
+    El índice corresponde a graphic.points[index].
+  */
+  pointRevealAt?:
+    | Array<
+        number |
+        null
+      >
+    | null;
+};
+
+export type MotionTimelineAsset = {
+  key: string;
+
+  data: Uint8Array;
+};
+
+export type MotionTimelineFrame = {
+  assetKey: string;
+
+  duration: number;
+};
+
+export type MotionTimeline = {
+  assets: MotionTimelineAsset[];
+
+  frames: MotionTimelineFrame[];
+};

@@ -63,6 +63,7 @@ const editPlanSchema = {
           "effect",
           "textOverlay",
           "broll",
+          "motionGraphic",
           "reason",
         ],
 
@@ -94,6 +95,7 @@ const editPlanSchema = {
               "PRICE",
               "QUESTION",
               "PRODUCT_NAME",
+              "MOTION_GRAPHIC",
             ],
           },
 
@@ -155,6 +157,242 @@ const editPlanSchema = {
 
                     items: {
                       type: "string",
+                    },
+                  },
+                },
+              },
+            ],
+          },
+
+          motionGraphic: {
+            anyOf: [
+              {
+                type: "null",
+              },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "primary",
+                  "secondary",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "STAT_CALLOUT",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  primary: {
+                    type: "string",
+                  },
+
+                  secondary: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+                },
+              },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "leftTitle",
+                  "leftDetail",
+                  "rightTitle",
+                  "rightDetail",
+                  "emphasis",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "COMPARISON",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  leftTitle: {
+                    type: "string",
+                  },
+
+                  leftDetail: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  rightTitle: {
+                    type: "string",
+                  },
+
+                  rightDetail: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  emphasis: {
+                    type: "string",
+
+                    enum: [
+                      "LEFT",
+                      "RIGHT",
+                      "NEUTRAL",
+                    ],
+                  },
+                },
+              },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "steps",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "PROCESS_FLOW",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  steps: {
+                    type: "array",
+
+                    minItems: 3,
+
+                    maxItems: 5,
+
+                    items: {
+                      type: "object",
+
+                      additionalProperties: false,
+
+                      required: [
+                        "title",
+                        "detail",
+                      ],
+
+                      properties: {
+                        title: {
+                          type: "string",
+                        },
+
+                        detail: {
+                          type: [
+                            "string",
+                            "null",
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "points",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "KEY_POINTS",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  points: {
+                    type: "array",
+
+                    minItems: 2,
+
+                    maxItems: 5,
+
+                    items: {
+                      type: "object",
+
+                      additionalProperties: false,
+
+                      required: [
+                        "title",
+                        "detail",
+                      ],
+
+                      properties: {
+                        title: {
+                          type: "string",
+                        },
+
+                        detail: {
+                          type: [
+                            "string",
+                            "null",
+                          ],
+                        },
+                      },
                     },
                   },
                 },
@@ -421,7 +659,15 @@ Use this when the wording itself deserves emphasis.
 KEY_STATEMENT should not prevent nearby B-roll from being used later if
 the following content becomes visually demonstrable.
 
-10. Explicit product-versus-product discussion can use COMPARISON.
+10. Explicit A-versus-B discussion can remain on TALKING_HEAD when the
+comparison is brief or personality-driven.
+
+When both sides are clearly identifiable and a generated side-by-side visual
+would improve comprehension, prefer:
+action: "MOTION_GRAPHIC"
+motionGraphic.type: "COMPARISON"
+
+Do not choose MOTION_GRAPHIC merely because the word "versus" appears.
 
 11. Important prices can use PRICE.
 
@@ -652,6 +898,337 @@ Ask:
 - Did I preserve the speaker for opinions and personality?
 - Is each B-roll request visually specific?
 - Does the video have enough visual rhythm without becoming noisy?
+
+24. AUTO MOTION GRAPHICS
+
+CutPilot can use MOTION_GRAPHIC when a spoken idea is better understood
+through a generated visual instead of talking head or real B-roll.
+
+The available Motion Graphic types are:
+
+- STAT_CALLOUT
+- COMPARISON
+- PROCESS_FLOW
+- KEY_POINTS
+
+Do NOT request any other Motion Graphic type.
+
+The Motion Graphic data describes WHAT should be communicated.
+
+Do NOT describe:
+- colors
+- fonts
+- positions
+- animation easing
+- HTML
+- CSS
+- Canvas instructions
+- rendering implementation
+
+CutPilot controls the visual design and animation.
+
+25. MOTION GRAPHIC SELECTION RULES
+
+Use MOTION_GRAPHIC only when it genuinely improves comprehension.
+
+Prefer BROLL when the viewer benefits from seeing a real:
+- product
+- device
+- feature
+- interface
+- physical detail
+- camera
+- design element
+- real-world action
+
+Prefer TALKING_HEAD when the value comes primarily from:
+- personality
+- opinion
+- judgment
+- emotion
+- recommendation
+- direct delivery
+
+Motion Graphics are visual punctuation, not the default editing style.
+
+Do not place them too frequently.
+
+When action is MOTION_GRAPHIC:
+- motionGraphic MUST NOT be null
+- broll MUST be null
+
+When action is NOT MOTION_GRAPHIC:
+- motionGraphic MUST be null
+
+26. STAT_CALLOUT
+
+STAT_CALLOUT is appropriate for concise numerical or measurable ideas such as:
+- time
+- money
+- prices
+- percentages
+- quantities
+- increases
+- decreases
+- before/after numerical values
+- an important standalone statistic
+
+Do NOT use STAT_CALLOUT merely because a number appears.
+
+The number should be important enough that visual emphasis improves
+comprehension or retention.
+
+Example:
+
+Transcript:
+
+"Antes tardaba tres horas editando y ahora puedo hacerlo en veinte minutos."
+
+Valid:
+
+action:
+"MOTION_GRAPHIC"
+
+motionGraphic:
+{
+  "type": "STAT_CALLOUT",
+  "label": "TIEMPO DE EDICIÓN",
+  "primary": "3 HORAS",
+  "secondary": "20 MIN"
+}
+
+Do not invent numbers, prices, percentages or statistics.
+
+27. COMPARISON
+
+COMPARISON is appropriate when the narration clearly compares TWO identifiable
+options, products, versions, approaches, states or alternatives and showing them
+side-by-side makes the contrast easier to understand.
+
+Examples:
+- iPhone 15 Pro vs iPhone 16
+- free plan vs paid plan
+- manual editing vs CutPilot
+- old workflow vs new workflow
+- option A vs option B
+
+COMPARISON must contain:
+
+leftTitle:
+the concise name of side A.
+
+leftDetail:
+one short detail explicitly supported by the transcript, or null.
+
+rightTitle:
+the concise name of side B.
+
+rightDetail:
+one short detail explicitly supported by the transcript, or null.
+
+emphasis:
+- "LEFT" only if the speaker clearly favors the left side.
+- "RIGHT" only if the speaker clearly favors the right side.
+- "NEUTRAL" when the narration does not clearly choose a winner.
+
+Do NOT infer a winner from general knowledge.
+
+Do NOT invent product advantages, specifications, prices or characteristics.
+
+If the transcript only names the two sides but gives no useful differentiating
+detail, set leftDetail and rightDetail to null.
+
+Keep details concise. They are visual support, not subtitles.
+
+Example:
+
+Transcript:
+
+"El iPhone 15 Pro tiene telefoto. El iPhone 16 tiene Camera Control.
+Para mí el 15 Pro sigue siendo mejor compra."
+
+Valid:
+
+action:
+"MOTION_GRAPHIC"
+
+motionGraphic:
+{
+  "type": "COMPARISON",
+  "label": "¿CUÁL CONVIENE?",
+  "leftTitle": "iPhone 15 Pro",
+  "leftDetail": "TELEFOTO",
+  "rightTitle": "iPhone 16",
+  "rightDetail": "CAMERA CONTROL",
+  "emphasis": "LEFT"
+}
+
+For a neutral statement such as:
+
+"El plan gratuito permite 3 proyectos y el Pro permite proyectos ilimitados."
+
+Valid emphasis:
+"NEUTRAL"
+
+Do NOT use COMPARISON for:
+- more than two sides
+- vague comparisons with no identifiable A and B
+- a single statistic
+- workflows with three or more steps
+- architecture diagrams
+
+28. PROCESS_FLOW
+
+PROCESS_FLOW is appropriate when the narration clearly describes a LINEAR
+sequence of 3 to 5 meaningful steps and seeing those steps build in order makes
+the explanation easier to follow.
+
+Good examples:
+- idea -> script -> record -> CutPilot -> publish
+- upload -> transcribe -> edit -> render
+- capture lead -> qualify -> follow up -> close
+- install -> configure -> test -> deploy
+
+PROCESS_FLOW must contain:
+
+label:
+a short context label, or null.
+
+steps:
+an ordered array of 3 to 5 objects.
+
+Each step contains:
+- title: a concise action or stage name.
+- detail: one short supporting detail explicitly present in the transcript,
+  or null.
+
+Rules:
+
+- Preserve the spoken order.
+- Use only steps clearly supported by the transcript.
+- Do NOT invent missing workflow stages.
+- Do NOT transform a general list into a process unless the narration clearly
+  implies order or progression.
+- Keep step titles short, ideally 1 to 4 words.
+- Keep detail concise; it is visual support, not a subtitle.
+- Use 3 to 5 steps only.
+- Do NOT use PROCESS_FLOW for branching logic.
+- Do NOT use PROCESS_FLOW for architecture diagrams.
+- Do NOT use PROCESS_FLOW for two-option comparisons.
+- Do NOT use PROCESS_FLOW for a single before/after statistic.
+
+Example:
+
+Transcript:
+
+"Primero escribo el guion, luego grabo, subo el video a CutPilot,
+CutPilot lo edita y al final lo publico."
+
+Valid:
+
+action:
+"MOTION_GRAPHIC"
+
+motionGraphic:
+{
+  "type": "PROCESS_FLOW",
+  "label": "MI FLUJO",
+  "steps": [
+    {
+      "title": "GUION",
+      "detail": null
+    },
+    {
+      "title": "GRABAR",
+      "detail": null
+    },
+    {
+      "title": "CUTPILOT",
+      "detail": "EDICIÓN AUTOMÁTICA"
+    },
+    {
+      "title": "PUBLICAR",
+      "detail": null
+    }
+  ]
+}
+
+29. KEY_POINTS
+
+KEY_POINTS is appropriate when the narration presents 2 to 5 parallel ideas
+that belong to the same conceptual list but do NOT represent a sequence.
+
+Good examples:
+- reasons
+- benefits
+- drawbacks
+- mistakes
+- requirements
+- features
+- things the speaker likes or dislikes
+- key takeaways
+
+KEY_POINTS must contain:
+
+label:
+a short context label, or null.
+
+points:
+an ordered array of 2 to 5 objects.
+
+Each point contains:
+- title: a concise phrase representing the point.
+- detail: one short supporting detail explicitly present in the transcript,
+  or null.
+
+Rules:
+
+- Preserve the spoken order.
+- Use only points clearly supported by the transcript.
+- Do NOT invent extra reasons, benefits, mistakes, features or requirements.
+- Keep titles short, ideally 1 to 5 words.
+- Keep details concise; they are visual support, not subtitles.
+- Use 2 to 5 points only.
+- Do NOT use KEY_POINTS when the narration clearly describes chronological
+  steps or progression. Use PROCESS_FLOW instead.
+- Do NOT use KEY_POINTS for two alternatives being directly compared.
+  Use COMPARISON instead.
+- Do NOT use KEY_POINTS for a single number or before/after statistic.
+  Use STAT_CALLOUT instead.
+- A sentence containing several commas is NOT automatically a list.
+  The ideas must genuinely function as parallel points.
+
+Example:
+
+Transcript:
+
+"Lo que más me gusta de CutPilot es que edito mucho más rápido,
+mantengo un estilo consistente y ya no necesito abrir Premiere."
+
+Valid:
+
+action:
+"MOTION_GRAPHIC"
+
+motionGraphic:
+{
+  "type": "KEY_POINTS",
+  "label": "POR QUÉ LO USO",
+  "points": [
+    {
+      "title": "MÁS RÁPIDO",
+      "detail": "MENOS EDICIÓN MANUAL"
+    },
+    {
+      "title": "ESTILO CONSISTENTE",
+      "detail": null
+    },
+    {
+      "title": "SIN PREMIERE",
+      "detail": null
+    }
+  ]
+}
 
 Create a complete editorial plan for the supplied transcript.
 `;
