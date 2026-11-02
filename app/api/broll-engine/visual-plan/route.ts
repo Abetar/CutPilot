@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 
+import type {
+  MotionGraphicRequest,
+} from "@/lib/motion/types";
+
 export const runtime = "nodejs";
 
 type TranscriptSegment = {
@@ -36,13 +40,26 @@ type VisualPlanItem = {
   start: number;
   end: number;
   transcript: string;
-  action: "BROLL" | "IMPACT_WORD";
-  broll: {
-    subject: string | null;
-    intent: string | null;
-    concepts: string[];
-  };
+
+  action:
+    | "BROLL"
+    | "IMPACT_WORD"
+    | "MOTION_GRAPHIC";
+
+  broll:
+    | {
+        subject: string | null;
+        intent: string | null;
+        concepts: string[];
+      }
+    | null;
+
+  motionGraphic:
+    | MotionGraphicRequest
+    | null;
+
   impactText: string | null;
+
   reason: string;
 };
 
@@ -87,6 +104,7 @@ const visualPlanSchema = {
           "transcript",
           "action",
           "broll",
+          "motionGraphic",
           "impactText",
           "reason",
         ],
@@ -114,43 +132,288 @@ const visualPlanSchema = {
             enum: [
               "BROLL",
               "IMPACT_WORD",
+              "MOTION_GRAPHIC",
             ],
           },
 
           broll: {
-            type: "object",
-
-            additionalProperties: false,
-
-            required: [
-              "subject",
-              "intent",
-              "concepts",
-            ],
-
-            properties: {
-              subject: {
-                type: [
-                  "string",
-                  "null",
-                ],
+            anyOf: [
+              {
+                type: "null",
               },
 
-              intent: {
-                type: [
-                  "string",
-                  "null",
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "subject",
+                  "intent",
+                  "concepts",
                 ],
-              },
 
-              concepts: {
-                type: "array",
+                properties: {
+                  subject: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
 
-                items: {
-                  type: "string",
+                  intent: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  concepts: {
+                    type: "array",
+
+                    items: {
+                      type: "string",
+                    },
+                  },
                 },
               },
-            },
+            ],
+          },
+
+          motionGraphic: {
+            anyOf: [
+              {
+                type: "null",
+              },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "primary",
+                  "secondary",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "STAT_CALLOUT",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  primary: {
+                    type: "string",
+                  },
+
+                  secondary: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+                },
+              },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "leftTitle",
+                  "leftDetail",
+                  "rightTitle",
+                  "rightDetail",
+                  "emphasis",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "COMPARISON",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  leftTitle: {
+                    type: "string",
+                  },
+
+                  leftDetail: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  rightTitle: {
+                    type: "string",
+                  },
+
+                  rightDetail: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  emphasis: {
+                    type: "string",
+
+                    enum: [
+                      "LEFT",
+                      "RIGHT",
+                      "NEUTRAL",
+                    ],
+                  },
+                },
+              },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "steps",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "PROCESS_FLOW",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  steps: {
+                    type: "array",
+
+                    minItems: 3,
+
+                    maxItems: 5,
+
+                    items: {
+                      type: "object",
+
+                      additionalProperties: false,
+
+                      required: [
+                        "title",
+                        "detail",
+                      ],
+
+                      properties: {
+                        title: {
+                          type: "string",
+                        },
+
+                        detail: {
+                          type: [
+                            "string",
+                            "null",
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "points",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "KEY_POINTS",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  points: {
+                    type: "array",
+
+                    minItems: 2,
+
+                    maxItems: 5,
+
+                    items: {
+                      type: "object",
+
+                      additionalProperties: false,
+
+                      required: [
+                        "title",
+                        "detail",
+                      ],
+
+                      properties: {
+                        title: {
+                          type: "string",
+                        },
+
+                        detail: {
+                          type: [
+                            "string",
+                            "null",
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
           },
 
           impactText: {
@@ -243,22 +506,68 @@ function normalizeAndValidatePlan(
     }
 
     if (
-      item.action === "IMPACT_WORD" &&
-      (!item.impactText ||
-        !item.impactText.trim())
+      item.action === "IMPACT_WORD"
     ) {
-      return {
-        valid: false,
-        error:
-          "Un segmento IMPACT_WORD no contiene impactText.",
-      };
+      if (
+        !item.impactText ||
+        !item.impactText.trim()
+      ) {
+        return {
+          valid: false,
+          error:
+            "Un segmento IMPACT_WORD no contiene impactText.",
+        };
+      }
+
+      if (!item.broll) {
+        return {
+          valid: false,
+          error:
+            "Un segmento IMPACT_WORD necesita B-roll debajo.",
+        };
+      }
+
+      item.motionGraphic =
+        null;
     }
 
     if (
-      item.action === "BROLL" &&
-      item.impactText !== null
+      item.action === "BROLL"
     ) {
-      item.impactText = null;
+      if (!item.broll) {
+        return {
+          valid: false,
+          error:
+            "Un segmento BROLL no contiene una solicitud B-roll.",
+        };
+      }
+
+      item.impactText =
+        null;
+
+      item.motionGraphic =
+        null;
+    }
+
+    if (
+      item.action ===
+      "MOTION_GRAPHIC"
+    ) {
+      if (
+        !item.motionGraphic
+      ) {
+        return {
+          valid: false,
+          error:
+            "Un segmento MOTION_GRAPHIC no contiene motionGraphic.",
+        };
+      }
+
+      item.broll =
+        null;
+
+      item.impactText =
+        null;
     }
   }
 
@@ -468,83 +777,129 @@ export async function POST(
       "gpt-6-sol";
 
     const visualInstructions = `
-You are the B-Roll Engine for CutPilot.
+You are the Visual Director for CutPilot's B-Roll Engine.
 
 CutPilot is creating a short-form vertical voice-over video.
-
 There is NO talking-head footage.
+The supplied audio is the final narration.
 
-The supplied audio is already the final narration.
+Create a complete Visual Plan for the ENTIRE audio timeline.
 
-Your job is to create a complete Visual Plan for the ENTIRE audio timeline.
-
-Every second must have a meaningful B-roll visual underneath it.
-
-IMPACT_WORD is an overlay style, NOT a replacement for B-roll.
-Every item, including IMPACT_WORD items, must include a valid semantic B-roll request.
-
-CORE TIMELINE RULES:
-
-1. COVER 100% OF THE AUDIO.
-
-The first item MUST start at 0.
-
-The final item MUST end at the supplied duration.
-
-Every item must touch the next item exactly.
+Every second must have one meaningful visual action:
+- BROLL
+- IMPACT_WORD
+- MOTION_GRAPHIC
 
 There must be:
 - no gaps
 - no overlaps
-- no uncovered silence
 - no TALKING_HEAD
 - no empty visual sections
 
-2. Items must be ordered chronologically.
+The first item MUST start at 0.
+The final item MUST end at the supplied duration.
+Every item must touch the next item exactly.
+Items must be chronological.
 
-3. Normal visual segments should usually last approximately 2-5 seconds.
+Normal visual segments should usually last about 2-5 seconds.
+Use shorter or longer segments only when the meaning requires it.
+Divide by meaning, not arbitrary time.
 
-This is a pacing guideline, not a quota.
-
-A short visual may be approximately 1.5-2 seconds when useful.
-
-A longer visual may be approximately 5-6 seconds when one coherent idea deserves it.
-
-Avoid frantic changes every second.
-
-Avoid leaving one visual unchanged for a long stretch when the narration clearly moves to another idea.
-
-4. Divide the narration by MEANING, not by arbitrary time intervals.
-
-A visual change should normally happen when:
-- the product changes
-- the feature changes
-- the use case changes
-- the sentence introduces a new concrete idea
-- a strong statement deserves emphasis
-- the visual intent meaningfully changes
-
-5. The transcript field must represent the spoken content covered by that item's time range.
-
+The transcript field must represent the spoken content in that item's range.
 Do not invent or paraphrase facts.
 
-6. Every item must include a semantic B-roll request.
+VISUAL TYPE SELECTION
 
-The B-roll request has three fields with DIFFERENT responsibilities:
+Prefer BROLL when the viewer benefits from seeing a real:
+- product
+- device
+- feature
+- interface
+- physical detail
+- camera
+- design element
+- real-world action
+- environment
 
-SUBJECT = WHAT concrete entity should appear.
-INTENT = WHAT the viewer should SEE that entity doing or communicating.
+Use IMPACT_WORD sparingly when a short phrase deserves strong emphasis.
+IMPACT_WORD is an overlay on top of B-roll, not a replacement for B-roll.
+
+Use MOTION_GRAPHIC when a generated visual explains the spoken idea more clearly than real B-roll.
+
+Motion Graphics are selective visual punctuation, but DO NOT underuse them.
+
+Do not use MOTION_GRAPHIC merely because the narration contains a number, list or comparison.
+
+However, when the narration contains a HIGH-CONFIDENCE Motion Graphic opportunity, prefer MOTION_GRAPHIC over generic B-roll.
+
+HIGH-CONFIDENCE MOTION GRAPHIC OPPORTUNITIES
+
+A high-confidence opportunity exists when one of these structures is explicitly present in the narration:
+
+1. A meaningful numerical change, before/after metric, or measurable contrast:
+   - time reduced
+   - money saved
+   - price difference
+   - percentage change
+   - quantity change
+   - speed multiplier
+   → Prefer STAT_CALLOUT.
+
+2. A direct comparison between exactly TWO identifiable products, approaches, versions, options or states with explicit differences:
+   → Prefer COMPARISON.
+
+3. A clearly spoken chronological or dependent sequence of 3 to 5 steps:
+   → Prefer PROCESS_FLOW.
+
+4. A clearly spoken list of 2 to 5 parallel reasons, benefits, drawbacks, mistakes, requirements, features or takeaways:
+   → Prefer KEY_POINTS.
+
+For videos longer than approximately 30 seconds:
+- If at least one high-confidence Motion Graphic opportunity exists, normally include at least 1 MOTION_GRAPHIC.
+- Prefer approximately 1-3 Motion Graphics in a typical short when the narration genuinely supports them.
+- This is NOT a quota. Never invent or force Motion Graphics only to satisfy a count.
+- Avoid placing Motion Graphics back-to-back unless the narration genuinely benefits from consecutive generated visuals.
+- Prefer the strongest opportunities and let B-roll handle the rest.
+
+When choosing between a strong structured Motion Graphic and generic B-roll:
+- choose MOTION_GRAPHIC when it improves comprehension
+- choose BROLL when seeing a real product, interface, device, environment or physical action is more informative
+
+Example:
+
+Narration:
+"Antes este trabajo me tomaba veinte horas. Ahora con IA puedo hacerlo en diez."
+
+Prefer:
+MOTION_GRAPHIC / STAT_CALLOUT
+
+motionGraphic:
+{
+  "type": "STAT_CALLOUT",
+  "label": "TIEMPO DE TRABAJO",
+  "primary": "20 HORAS",
+  "secondary": "10 HORAS"
+}
+
+Do NOT default to generic laptop or coding B-roll for that exact numerical before/after statement.
+
+BROLL RULES
+
+For BROLL and IMPACT_WORD:
+broll MUST contain:
+- subject
+- intent
+- concepts
+
+SUBJECT = the concrete entity to show.
+INTENT = what the viewer should SEE.
 CONCEPTS = searchable visual details, actions, features or environments.
 
-SUBJECT RULES:
+Prefer concrete canonical subjects.
+Keep known product/model names stable across nearby items while the narration is still about them.
+Never output filenames, paths, asset IDs or folder names.
 
-- Prefer a concrete canonical entity.
-- If a specific product or model is established by the narration, keep that exact product/model across nearby sentences while the narration is still discussing it.
-- Do not replace a known product with an abstract workflow description.
-- Keep subject short.
-- Never put filenames, paths, asset IDs or invented library entries in subject.
-
-GOOD SUBJECTS:
+Good subjects:
 "iPhone 13"
 "iPhone 15 Pro"
 "MacBook"
@@ -552,127 +907,154 @@ GOOD SUBJECTS:
 "smartphone"
 "laptop"
 
-BAD SUBJECTS:
-"person using technology efficiently"
-"professional content creation workflow"
-"social media editing process"
-
-INTENT RULES:
-
-Intent should describe what the viewer should SEE.
-
-GOOD:
+Good intents:
 "close-up of the camera system while discussing photography"
 "show the phone being used to record vertical video"
 "show a creator editing video on a laptop"
 
-BAD:
-"show technology"
-"show iPhone"
+Do not repeat the same generic shot when the narration supports variation.
 
-CONCEPT RULES:
+For BROLL:
+- broll MUST NOT be null
+- impactText MUST be null
+- motionGraphic MUST be null
 
-Concepts should contain useful searchable visual details such as:
-- feature
-- physical detail
-- action
-- use case
-- shot type
-- interface
-- environment
-- workflow
+IMPACT_WORD RULES
 
-Do not fill concepts mostly with repetitions of the subject.
+Use IMPACT_WORD only for a short memorable phrase such as:
+- decisive conclusion
+- warning
+- major price
+- surprising statement
+- memorable claim
 
-7. Do NOT choose real CutPilot files.
+impactText should normally be 2-5 words.
 
-Never output:
-- filenames
-- paths
-- asset IDs
-- folder names
+For IMPACT_WORD:
+- broll MUST NOT be null
+- impactText MUST NOT be null
+- motionGraphic MUST be null
 
-You are defining visual intent only.
+AUTO MOTION GRAPHICS
 
-CutPilot will resolve your semantic requests against its local B-roll library later.
+Available types:
+- STAT_CALLOUT
+- COMPARISON
+- PROCESS_FLOW
+- KEY_POINTS
 
-8. Maintain narrative subject continuity.
+Do NOT request any other Motion Graphic type.
+
+Motion Graphic data describes WHAT should be communicated.
+Do NOT describe colors, fonts, positions, easing, HTML, CSS, Canvas or rendering implementation.
+
+For MOTION_GRAPHIC:
+- motionGraphic MUST NOT be null
+- broll MUST be null
+- impactText MUST be null
+
+STAT_CALLOUT
+
+Use for an important measurable idea:
+- time
+- money
+- price
+- percentage
+- quantity
+- increase/decrease
+- before/after numerical change
+- important standalone statistic
+
+Do not use merely because a number appears.
+Do not invent numbers.
 
 Example:
+"Antes tardaba tres horas y ahora veinte minutos."
 
-"El iPhone 13 sigue funcionando muy bien.
-Sus cámaras todavía son buenas.
-Y para redes sociales sigue siendo suficiente."
+{
+  "type": "STAT_CALLOUT",
+  "label": "TIEMPO DE EDICIÓN",
+  "primary": "3 HORAS",
+  "secondary": "20 MIN"
+}
 
-All three statements may still use:
+COMPARISON
 
-subject:
-"iPhone 13"
+Use when the narration clearly compares exactly TWO identifiable options, products, versions, approaches or states.
 
-with different intent/concepts.
+Fields:
+- leftTitle
+- leftDetail or null
+- rightTitle
+- rightDetail or null
+- emphasis: LEFT, RIGHT or NEUTRAL
 
-Do not switch subject to:
-"social media workflow"
+Use LEFT or RIGHT only when the speaker clearly favors that side.
+Do not infer a winner from general knowledge.
+Do not invent specifications or advantages.
 
-unless the narration truly changes subject.
+PROCESS_FLOW
 
-9. Vary the visual intent.
+Use only for a chronological or dependent sequence of 3 to 5 steps.
 
-Do not request the same generic product shot repeatedly.
+Each step:
+- title
+- detail or null
 
-If the narration supports it, vary between:
-- product hero shot
-- camera close-up
-- screen usage
-- handheld use
-- photography
-- video recording
-- editing workflow
-- physical design
-- accessories
-- store or buying context
+Preserve spoken order.
+Do not invent missing steps.
+Do not use PROCESS_FLOW for parallel reasons, benefits or features.
 
-10. IMPACT_WORD is optional and should be sparse.
+KEY_POINTS
 
-Use action IMPACT_WORD only when a short phrase deserves strong visual emphasis, such as:
-- a decisive conclusion
-- a surprising statement
-- an important price
-- a major warning
-- a strong comparison
-- a memorable claim
-
-impactText should normally be approximately 2-5 words.
+Use for 2 to 5 parallel ideas that belong to the same conceptual list but do NOT form a sequence.
 
 Examples:
-"SIGUE SIENDO BUENO"
-"NO VALE LA PENA"
-"$15,000 PESOS"
-"EL GRAN PROBLEMA"
+- reasons
+- benefits
+- drawbacks
+- mistakes
+- requirements
+- features
+- takeaways
 
-For normal BROLL items:
-impactText MUST be null.
+Each point:
+- title
+- detail or null
 
-For IMPACT_WORD items:
-impactText MUST contain the short overlay text.
+Preserve spoken order.
+Do not invent extra points.
+Do not use KEY_POINTS for chronological steps.
+Do not use KEY_POINTS for direct A-vs-B comparison.
+Do not use KEY_POINTS for one statistic.
 
-Even an IMPACT_WORD item still requires a B-roll request because the B-roll remains underneath the overlay.
+GENERAL RULES
 
-11. Do not invent facts, products, models, prices or claims that are absent from the narration.
+Do not invent:
+- products
+- models
+- prices
+- claims
+- statistics
+- features
+- workflow steps
+- list items
 
-12. Write a short reason explaining why each visual choice fits that exact moment.
+Write a short reason explaining why each visual choice fits that moment.
 
-13. Before finalizing, mentally audit the complete timeline.
-
-Verify:
+Before finalizing, audit:
 - first item starts at 0
-- final item ends at the supplied duration
-- every adjacent boundary is contiguous
+- final item ends at duration
+- all adjacent boundaries are contiguous
 - every second is covered
-- every item contains B-roll intent
-- there is no TALKING_HEAD
-- IMPACT_WORD is used sparingly
-- visual ideas vary when the narration supports it
+- no TALKING_HEAD
+- BROLL items contain broll only
+- IMPACT_WORD items contain broll + impactText
+- MOTION_GRAPHIC items contain motionGraphic only
+- Motion Graphics are selective
+- high-confidence Motion Graphic opportunities were not ignored in favor of generic B-roll
+- videos longer than approximately 30 seconds normally include at least 1 MOTION_GRAPHIC when a high-confidence opportunity exists
+- visual ideas vary when supported
 
 Return one complete Visual Plan for the supplied transcript.
 `;

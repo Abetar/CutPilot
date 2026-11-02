@@ -25,6 +25,11 @@ import {
   type VoiceOverRenderProgress,
 } from "@/lib/broll-engine/renderVoiceOverVideo";
 import { getBrollFile } from "@/lib/broll/localLibrary";
+import { matchBroll } from "@/lib/broll/matchBroll";
+
+import type {
+  MotionGraphicRequest,
+} from "@/lib/motion/types";
 
 type AudioFileState = {
   file: File;
@@ -64,14 +69,50 @@ type VisualPlanItem = {
   start: number;
   end: number;
   transcript: string;
-  action: "BROLL" | "IMPACT_WORD";
-  broll: {
-    subject: string | null;
-    intent: string | null;
-    concepts: string[];
-  };
+
+  action:
+    | "BROLL"
+    | "IMPACT_WORD"
+    | "MOTION_GRAPHIC";
+
+  broll:
+    | {
+        subject: string | null;
+        intent: string | null;
+        concepts: string[];
+      }
+    | null;
+
+  motionGraphic:
+    | MotionGraphicRequest
+    | null;
+
   impactText: string | null;
+
   reason: string;
+
+  /*
+    Metadata local de Review. No forma parte del
+    contrato del Visual Planner.
+  */
+  resolutionSource?:
+    | "VISUAL_PLAN"
+    | "MOTION_FALLBACK";
+};
+
+type MotionFallbackStatus =
+  | "RESOLVING"
+  | "RESOLVED"
+  | "NO_FALLBACK";
+
+type MotionFallbackResponse = {
+  items?: Array<{
+    id: string;
+    useMotion: boolean;
+    motionGraphic: MotionGraphicRequest | null;
+    reason: string;
+  }>;
+  error?: string;
 };
 
 type VisualPlan = {
@@ -85,6 +126,13 @@ type VisualPlanStatus =
   | "PLANNING"
   | "PLAN_READY"
   | "FAILED";
+
+type VisualPlanFilter =
+  | "ALL"
+  | "BROLL"
+  | "MOTION"
+  | "IMPACT"
+  | "UNRESOLVED";
 
 type RenderDiagnosticEntry = {
   id: string;
@@ -239,6 +287,14 @@ export default function BrollEnginePage() {
     setSelectedBrollByItem,
   ] = useState<Record<string, string | null>>({});
 
+  const [
+    motionFallbackStatusByItem,
+    setMotionFallbackStatusByItem,
+  ] = useState<Record<string, MotionFallbackStatus>>({});
+
+  const motionFallbackBatchRunningRef =
+    useRef(false);
+
 
   const [
     renderPlan,
@@ -320,6 +376,13 @@ export default function BrollEnginePage() {
     "REVIEW" | "RENDER"
   >("REVIEW");
 
+  const [
+    visualPlanFilter,
+    setVisualPlanFilter,
+  ] = useState<VisualPlanFilter>(
+    "ALL"
+  );
+
   useEffect(() => {
     return () => {
       if (audio?.url) {
@@ -336,7 +399,10 @@ export default function BrollEnginePage() {
     setVisualPlanStatus("IDLE");
     setVisualPlanError(null);
     setVisualPlan(null);
+    setVisualPlanFilter("ALL");
     setSelectedBrollByItem({});
+    setMotionFallbackStatusByItem({});
+    motionFallbackBatchRunningRef.current = false;
     setRenderPlan(null);
     setRenderPlanError(null);
     setVideoRenderStatus("IDLE");
@@ -474,7 +540,10 @@ export default function BrollEnginePage() {
     setVisualPlanStatus("PLANNING");
     setVisualPlanError(null);
     setVisualPlan(null);
+    setVisualPlanFilter("ALL");
     setSelectedBrollByItem({});
+    setMotionFallbackStatusByItem({});
+    motionFallbackBatchRunningRef.current = false;
     setRenderPlan(null);
     setRenderPlanError(null);
 
@@ -541,6 +610,237 @@ export default function BrollEnginePage() {
       );
     }
   }
+
+  /*
+    ==========================================
+    B-ROLL -> MOTION FALLBACK
+    ==========================================
+
+    El Visual Planner toma la primera decisión editorial.
+    Después, ya con la biblioteca local disponible, usamos
+    exactamente el mismo matcher que Review.
+
+    Si un BROLL no tiene NINGÚN candidato local, intentamos
+    una segunda representación visual estructurada.
+
+    Sólo BROLL entra aquí. IMPACT_WORD necesita B-roll debajo
+    y conserva su resolución manual por ahora.
+  */
+  useEffect(() => {
+    if (
+      !visualPlan ||
+      !library ||
+      visualPlanStatus !== "PLAN_READY" ||
+      motionFallbackBatchRunningRef.current
+    ) {
+      return;
+    }
+
+    const candidates =
+      visualPlan.items.filter(
+        (item) => {
+          if (
+            item.action !== "BROLL" ||
+            !item.broll ||
+            selectedBrollByItem[item.id] ||
+            motionFallbackStatusByItem[item.id]
+          ) {
+            return false;
+          }
+
+          return (
+            matchBroll(
+              library.catalog,
+              item.broll,
+              1
+            ).length === 0
+          );
+        }
+      );
+
+    if (candidates.length === 0) {
+      return;
+    }
+
+    motionFallbackBatchRunningRef.current = true;
+
+    setMotionFallbackStatusByItem(
+      (current) => {
+        const next = {
+          ...current,
+        };
+
+        for (const item of candidates) {
+          next[item.id] =
+            "RESOLVING";
+        }
+
+        return next;
+      }
+    );
+
+    async function resolveFallbacks() {
+      try {
+        const response = await fetch(
+          "/api/broll-engine/motion-fallback",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              items:
+                candidates.map(
+                  (item) => ({
+                    id: item.id,
+                    start: item.start,
+                    end: item.end,
+                    transcript:
+                      item.transcript,
+                    reason:
+                      item.reason,
+                    broll:
+                      item.broll,
+                  })
+                ),
+            }),
+          }
+        );
+
+        const data =
+          (await response.json()) as
+            MotionFallbackResponse;
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ??
+              "No se pudo resolver el fallback visual."
+          );
+        }
+
+        const decisionById =
+          new Map(
+            (data.items ?? []).map(
+              (decision) => [
+                decision.id,
+                decision,
+              ] as const
+            )
+          );
+
+        setVisualPlan(
+          (current) => {
+            if (!current) {
+              return current;
+            }
+
+            return {
+              ...current,
+
+              items:
+                current.items.map(
+                  (item) => {
+                    const decision =
+                      decisionById.get(
+                        item.id
+                      );
+
+                    if (
+                      !decision ||
+                      !decision.useMotion ||
+                      !decision.motionGraphic ||
+                      item.action !== "BROLL"
+                    ) {
+                      return item;
+                    }
+
+                    return {
+                      ...item,
+
+                      action:
+                        "MOTION_GRAPHIC" as const,
+
+                      broll: null,
+
+                      motionGraphic:
+                        decision.motionGraphic,
+
+                      impactText: null,
+
+                      resolutionSource:
+                        "MOTION_FALLBACK" as const,
+
+                      reason:
+                        `${item.reason} Auto Motion fallback: ${decision.reason}`,
+                    };
+                  }
+                ),
+            };
+          }
+        );
+
+        setMotionFallbackStatusByItem(
+          (current) => {
+            const next = {
+              ...current,
+            };
+
+            for (const item of candidates) {
+              const decision =
+                decisionById.get(
+                  item.id
+                );
+
+              next[item.id] =
+                decision?.useMotion &&
+                decision.motionGraphic
+                  ? "RESOLVED"
+                  : "NO_FALLBACK";
+            }
+
+            return next;
+          }
+        );
+      } catch (error) {
+        console.error(
+          "B-Roll Engine Motion fallback error:",
+          error
+        );
+
+        /*
+          Un fallo del fallback NO rompe el Visual Plan.
+          Los segmentos vuelven al flujo manual UNRESOLVED.
+        */
+        setMotionFallbackStatusByItem(
+          (current) => {
+            const next = {
+              ...current,
+            };
+
+            for (const item of candidates) {
+              next[item.id] =
+                "NO_FALLBACK";
+            }
+
+            return next;
+          }
+        );
+      } finally {
+        motionFallbackBatchRunningRef.current = false;
+      }
+    }
+
+    void resolveFallbacks();
+  }, [
+    visualPlan,
+    visualPlanStatus,
+    library,
+    selectedBrollByItem,
+    motionFallbackStatusByItem,
+  ]);
 
   useEffect(() => {
     setRenderPlan(null);
@@ -877,6 +1177,9 @@ export default function BrollEnginePage() {
             impactSegments:
               renderPlan.impactSegments,
 
+            motionGraphicSegments:
+              renderPlan.motionGraphicSegments,
+
             onProgress:
               recordRenderProgress,
           }
@@ -1112,7 +1415,10 @@ export default function BrollEnginePage() {
                 item.action ===
                 "IMPACT_WORD"
                   ? "KEY_STATEMENT"
-                  : "BROLL",
+                  : item.action ===
+                      "MOTION_GRAPHIC"
+                    ? "MOTION_GRAPHIC"
+                    : "BROLL",
 
               effect:
                 item.action ===
@@ -1127,10 +1433,16 @@ export default function BrollEnginePage() {
                   : null,
 
               broll:
-                item.broll,
+                item.action ===
+                "MOTION_GRAPHIC"
+                  ? null
+                  : item.broll,
 
               motionGraphic:
-                null,
+                item.action ===
+                "MOTION_GRAPHIC"
+                  ? item.motionGraphic
+                  : null,
 
               reason:
                 item.reason,
@@ -1151,15 +1463,137 @@ export default function BrollEnginePage() {
     );
   }
 
-  const resolvedBrollCount =
+  const brollRequiredItems =
     visualPlan
       ? visualPlan.items.filter(
           (item) =>
-            Boolean(
-              selectedBrollByItem[
+            item.action ===
+              "BROLL" ||
+            item.action ===
+              "IMPACT_WORD"
+        )
+      : [];
+
+  const brollRequiredCount =
+    brollRequiredItems.length;
+
+  const resolvedBrollCount =
+    brollRequiredItems.filter(
+      (item) =>
+        Boolean(
+          selectedBrollByItem[
+            item.id
+          ]
+        )
+    ).length;
+
+  const motionFallbackResolvingCount =
+    Object.values(
+      motionFallbackStatusByItem
+    ).filter(
+      (status) =>
+        status ===
+        "RESOLVING"
+    ).length;
+
+  const unresolvedBrollItems =
+    brollRequiredItems.filter(
+      (item) =>
+        !selectedBrollByItem[
+          item.id
+        ] &&
+        motionFallbackStatusByItem[
+          item.id
+        ] !== "RESOLVING"
+    );
+
+  const unresolvedBrollCount =
+    unresolvedBrollItems.length;
+
+  const brollOnlyCount =
+    visualPlan
+      ? visualPlan.items.filter(
+          (item) =>
+            item.action ===
+            "BROLL"
+        ).length
+      : 0;
+
+  const impactWordCount =
+    visualPlan
+      ? visualPlan.items.filter(
+          (item) =>
+            item.action ===
+            "IMPACT_WORD"
+        ).length
+      : 0;
+
+  const visibleVisualPlanItems =
+    visualPlan
+      ? visualPlan.items
+          .map((item, index) => ({
+            item,
+            index,
+          }))
+          .filter(({ item }) => {
+            if (
+              visualPlanFilter ===
+              "ALL"
+            ) {
+              return true;
+            }
+
+            if (
+              visualPlanFilter ===
+              "BROLL"
+            ) {
+              return (
+                item.action ===
+                "BROLL"
+              );
+            }
+
+            if (
+              visualPlanFilter ===
+              "MOTION"
+            ) {
+              return (
+                item.action ===
+                "MOTION_GRAPHIC"
+              );
+            }
+
+            if (
+              visualPlanFilter ===
+              "IMPACT"
+            ) {
+              return (
+                item.action ===
+                "IMPACT_WORD"
+              );
+            }
+
+            return (
+              (item.action ===
+                "BROLL" ||
+                item.action ===
+                  "IMPACT_WORD") &&
+              !selectedBrollByItem[
                 item.id
-              ]
-            )
+              ] &&
+              motionFallbackStatusByItem[
+                item.id
+              ] !== "RESOLVING"
+            );
+          })
+      : [];
+
+  const motionGraphicCount =
+    visualPlan
+      ? visualPlan.items.filter(
+          (item) =>
+            item.action ===
+            "MOTION_GRAPHIC"
         ).length
       : 0;
 
@@ -1474,11 +1908,15 @@ export default function BrollEnginePage() {
                           </span>
 
                           <span className="rounded-full border border-cyan-300/15 bg-cyan-300/[0.04] px-2.5 py-1 text-xs text-cyan-200">
-                            {resolvedBrollCount}/{visualPlan.items.length} B-roll
+                            {resolvedBrollCount}/{brollRequiredCount} B-roll
                           </span>
 
                           <span className="rounded-full border border-fuchsia-300/15 bg-fuchsia-300/[0.04] px-2.5 py-1 text-xs text-fuchsia-200">
                             {visualPlan.items.filter((item) => item.action === "IMPACT_WORD").length} Impact
+                          </span>
+
+                          <span className="rounded-full border border-lime-300/15 bg-lime-300/[0.04] px-2.5 py-1 text-xs text-lime-200">
+                            {motionGraphicCount} Motion
                           </span>
                         </div>
                       </div>
@@ -1697,7 +2135,7 @@ export default function BrollEnginePage() {
                     </span>
 
                     <span className="text-[11px] text-slate-500">
-                      {resolvedBrollCount}/{visualPlan.items.length} B-roll
+                      {resolvedBrollCount}/{brollRequiredCount} B-roll
                     </span>
                   </div>
 
@@ -1749,17 +2187,93 @@ export default function BrollEnginePage() {
               {planModalTab === "REVIEW" ? (
                 <div className="mx-auto max-w-4xl">
                   <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full border border-cyan-300/15 bg-cyan-300/[0.04] px-2.5 py-1 text-[10px] font-semibold text-cyan-200">
-                      {visualPlan.items.length} CLIPS
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVisualPlanFilter(
+                          "ALL"
+                        )
+                      }
+                      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
+                        visualPlanFilter ===
+                        "ALL"
+                          ? "border-cyan-300/40 bg-cyan-300/15 text-cyan-100"
+                          : "border-cyan-300/15 bg-cyan-300/[0.04] text-cyan-200 hover:bg-cyan-300/[0.08]"
+                      }`}
+                    >
+                      {visualPlan.items.length} ALL
+                    </button>
 
-                    <span className="rounded-full border border-lime-300/15 bg-lime-300/[0.04] px-2.5 py-1 text-[10px] font-semibold text-lime-200">
-                      {resolvedBrollCount} RESOLVED
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVisualPlanFilter(
+                          "BROLL"
+                        )
+                      }
+                      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
+                        visualPlanFilter ===
+                        "BROLL"
+                          ? "border-violet-300/40 bg-violet-300/15 text-violet-100"
+                          : "border-violet-300/15 bg-violet-300/[0.04] text-violet-200 hover:bg-violet-300/[0.08]"
+                      }`}
+                    >
+                      {brollOnlyCount} B-ROLL
+                    </button>
 
-                    <span className="rounded-full border border-fuchsia-300/15 bg-fuchsia-300/[0.04] px-2.5 py-1 text-[10px] font-semibold text-fuchsia-200">
-                      {visualPlan.items.filter((item) => item.action === "IMPACT_WORD").length} IMPACT
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVisualPlanFilter(
+                          "MOTION"
+                        )
+                      }
+                      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
+                        visualPlanFilter ===
+                        "MOTION"
+                          ? "border-lime-300/40 bg-lime-300/15 text-lime-100"
+                          : "border-lime-300/15 bg-lime-300/[0.04] text-lime-200 hover:bg-lime-300/[0.08]"
+                      }`}
+                    >
+                      {motionGraphicCount} MOTION
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVisualPlanFilter(
+                          "IMPACT"
+                        )
+                      }
+                      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
+                        visualPlanFilter ===
+                        "IMPACT"
+                          ? "border-fuchsia-300/40 bg-fuchsia-300/15 text-fuchsia-100"
+                          : "border-fuchsia-300/15 bg-fuchsia-300/[0.04] text-fuchsia-200 hover:bg-fuchsia-300/[0.08]"
+                      }`}
+                    >
+                      {impactWordCount} IMPACT
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVisualPlanFilter(
+                          "UNRESOLVED"
+                        )
+                      }
+                      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
+                        visualPlanFilter ===
+                        "UNRESOLVED"
+                          ? "border-amber-300/50 bg-amber-300/15 text-amber-100"
+                          : unresolvedBrollCount >
+                              0
+                            ? "border-amber-300/25 bg-amber-300/[0.07] text-amber-200 hover:bg-amber-300/[0.12]"
+                            : "border-white/[0.08] bg-white/[0.025] text-slate-500"
+                      }`}
+                    >
+                      {unresolvedBrollCount} UNRESOLVED
+                    </button>
 
                     <details className="ml-auto">
                       <summary className="cursor-pointer text-[11px] font-semibold text-slate-500 hover:text-slate-300">
@@ -1773,10 +2287,51 @@ export default function BrollEnginePage() {
                   </div>
 
                   <div className="space-y-4">
-                    {visualPlan.items.map((item, index) => (
+                    {visibleVisualPlanItems.length ===
+                    0 ? (
+                      <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-8 text-center">
+                        <p className="text-sm font-semibold text-slate-300">
+                          No hay decisiones para este filtro.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setVisualPlanFilter(
+                              "ALL"
+                            )
+                          }
+                          className="mt-3 text-xs font-bold text-cyan-300 hover:text-cyan-200"
+                        >
+                          VER TODO
+                        </button>
+                      </div>
+                    ) : (
+                      visibleVisualPlanItems.map(
+                        ({ item, index }) => {
+                          const isResolvingFallback =
+                            motionFallbackStatusByItem[
+                              item.id
+                            ] === "RESOLVING";
+
+                          const isUnresolved =
+                            (item.action ===
+                              "BROLL" ||
+                              item.action ===
+                                "IMPACT_WORD") &&
+                            !selectedBrollByItem[
+                              item.id
+                            ] &&
+                            !isResolvingFallback;
+
+                          return (
                       <section
                         key={item.id}
-                        className="overflow-hidden rounded-2xl border border-white/[0.08] bg-black/20"
+                        className={`overflow-hidden rounded-2xl border bg-black/20 ${
+                          isUnresolved
+                            ? "border-amber-300/30 ring-1 ring-amber-300/10"
+                            : "border-white/[0.08]"
+                        }`}
                       >
                         <div className="flex flex-col gap-2 border-b border-white/[0.06] px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
@@ -1787,9 +2342,13 @@ export default function BrollEnginePage() {
 
                               <span
                                 className={`rounded-md px-2 py-1 text-[10px] font-semibold ${
-                                  item.action === "IMPACT_WORD"
+                                  item.action ===
+                                  "IMPACT_WORD"
                                     ? "bg-fuchsia-300/10 text-fuchsia-200"
-                                    : "bg-violet-300/10 text-violet-200"
+                                    : item.action ===
+                                        "MOTION_GRAPHIC"
+                                      ? "bg-lime-300/10 text-lime-200"
+                                      : "bg-violet-300/10 text-violet-200"
                                 }`}
                               >
                                 {item.action}
@@ -1798,6 +2357,25 @@ export default function BrollEnginePage() {
                               <span className="text-[10px] font-semibold text-slate-600">
                                 #{String(index + 1).padStart(2, "0")}
                               </span>
+
+                              {isResolvingFallback && (
+                                <span className="rounded-md bg-cyan-300/10 px-2 py-1 text-[10px] font-black text-cyan-200">
+                                  TRYING MOTION
+                                </span>
+                              )}
+
+                              {isUnresolved && (
+                                <span className="rounded-md bg-amber-300/10 px-2 py-1 text-[10px] font-black text-amber-200">
+                                  NEEDS B-ROLL
+                                </span>
+                              )}
+
+                              {item.resolutionSource ===
+                                "MOTION_FALLBACK" && (
+                                <span className="rounded-md bg-lime-300/10 px-2 py-1 text-[10px] font-black text-lime-200">
+                                  AUTO FALLBACK
+                                </span>
+                              )}
                             </div>
 
                             <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-300">
@@ -1813,28 +2391,187 @@ export default function BrollEnginePage() {
                         </div>
 
                         <div className="p-3 md:p-4">
-                          {library ? (
-                            <BrollEngineMatchList
-                              catalog={library.catalog}
-                              request={item.broll}
-                              selectedAssetId={
-                                selectedBrollByItem[item.id] ?? null
-                              }
-                              onSelect={(assetId) =>
-                                setSelectedBrollByItem((current) => ({
-                                  ...current,
-                                  [item.id]: assetId,
-                                }))
-                              }
-                            />
+                          {item.action ===
+                          "MOTION_GRAPHIC" ? (
+                            <div className="rounded-2xl border border-lime-300/15 bg-lime-300/[0.035] p-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-md bg-lime-300/10 px-2 py-1 text-[10px] font-black text-lime-200">
+                                  MOTION
+                                </span>
+
+                                <span className="text-xs font-black text-white">
+                                  {item.motionGraphic?.type ??
+                                    "UNKNOWN"}
+                                </span>
+                              </div>
+
+                              {item.motionGraphic && (
+                                <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/20 p-3">
+                                  {item.motionGraphic.label && (
+                                    <p className="text-[10px] font-bold tracking-[0.14em] text-lime-200/70">
+                                      {item.motionGraphic.label}
+                                    </p>
+                                  )}
+
+                                  {item.motionGraphic.type ===
+                                    "STAT_CALLOUT" && (
+                                    <div className="mt-2">
+                                      <p className="text-xl font-black text-white">
+                                        {item.motionGraphic.primary}
+                                      </p>
+
+                                      {item.motionGraphic.secondary && (
+                                        <p className="mt-1 text-sm font-bold text-lime-200">
+                                          {item.motionGraphic.secondary}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {item.motionGraphic.type ===
+                                    "COMPARISON" && (
+                                    <div className="mt-2 space-y-2">
+                                      <div className="rounded-lg border border-white/[0.06] px-3 py-2">
+                                        <p className="text-xs font-black text-white">
+                                          A · {item.motionGraphic.leftTitle}
+                                        </p>
+
+                                        {item.motionGraphic.leftDetail && (
+                                          <p className="mt-1 text-[10px] text-slate-500">
+                                            {item.motionGraphic.leftDetail}
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      <div className="text-center text-[10px] font-black text-lime-300">
+                                        VS
+                                      </div>
+
+                                      <div className="rounded-lg border border-white/[0.06] px-3 py-2">
+                                        <p className="text-xs font-black text-white">
+                                          B · {item.motionGraphic.rightTitle}
+                                        </p>
+
+                                        {item.motionGraphic.rightDetail && (
+                                          <p className="mt-1 text-[10px] text-slate-500">
+                                            {item.motionGraphic.rightDetail}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {item.motionGraphic.type ===
+                                    "PROCESS_FLOW" && (
+                                    <div className="mt-2 space-y-1.5">
+                                      {item.motionGraphic.steps.map(
+                                        (step, stepIndex) => (
+                                          <div
+                                            key={`${step.title}-${stepIndex}`}
+                                            className="flex items-start gap-2"
+                                          >
+                                            <span className="text-[10px] font-black text-lime-300">
+                                              {stepIndex + 1}.
+                                            </span>
+
+                                            <div>
+                                              <p className="text-xs font-black text-white">
+                                                {step.title}
+                                              </p>
+
+                                              {step.detail && (
+                                                <p className="text-[10px] text-slate-500">
+                                                  {step.detail}
+                                                </p>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {item.motionGraphic.type ===
+                                    "KEY_POINTS" && (
+                                    <div className="mt-2 space-y-1.5">
+                                      {item.motionGraphic.points.map(
+                                        (point, pointIndex) => (
+                                          <div
+                                            key={`${point.title}-${pointIndex}`}
+                                            className="flex items-start gap-2"
+                                          >
+                                            <span className="text-[10px] font-black text-lime-300">
+                                              {String(
+                                                pointIndex + 1
+                                              ).padStart(2, "0")}
+                                            </span>
+
+                                            <div>
+                                              <p className="text-xs font-black text-white">
+                                                {point.title}
+                                              </p>
+
+                                              {point.detail && (
+                                                <p className="text-[10px] text-slate-500">
+                                                  {point.detail}
+                                                </p>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              <p className="mt-3 text-[10px] leading-4 text-slate-500">
+                                No requiere matching de B-roll.
+                              </p>
+                            </div>
+                          ) : isResolvingFallback ? (
+                            <div className="rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.035] p-4">
+                              <p className="text-[10px] font-black tracking-[0.14em] text-cyan-200">
+                                NO LOCAL MATCH · TRYING MOTION
+                              </p>
+
+                              <p className="mt-2 text-xs leading-5 text-slate-400">
+                                No encontramos B-roll suficientemente relacionado.
+                                CutPilot está comprobando si este momento puede
+                                resolverse automáticamente con Motion Graphics.
+                              </p>
+                            </div>
+                          ) : item.broll ? (
+                            library ? (
+                              <BrollEngineMatchList
+                                catalog={library.catalog}
+                                request={item.broll}
+                                selectedAssetId={
+                                  selectedBrollByItem[item.id] ?? null
+                                }
+                                onSelect={(assetId) =>
+                                  setSelectedBrollByItem((current) => ({
+                                    ...current,
+                                    [item.id]: assetId,
+                                  }))
+                                }
+                              />
+                            ) : (
+                              <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.04] px-3 py-3 text-xs text-amber-100/70">
+                                Conecta tu biblioteca para resolver este B-roll.
+                              </div>
+                            )
                           ) : (
-                            <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.04] px-3 py-3 text-xs text-amber-100/70">
-                              Conecta tu biblioteca para resolver este B-roll.
+                            <div className="rounded-xl border border-red-300/15 bg-red-300/[0.04] px-3 py-3 text-xs text-red-100/70">
+                              Este segmento no contiene una solicitud visual válida.
                             </div>
                           )}
                         </div>
                       </section>
-                    ))}
+                          );
+                        }
+                      )
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1847,7 +2584,7 @@ export default function BrollEnginePage() {
                         </p>
 
                         <p className="mt-1 text-sm text-slate-400">
-                          {visualPlan.items.length} B-roll · subtitles ·{" "}
+                          {brollRequiredCount} B-roll · {motionGraphicCount} Motion · subtitles ·{" "}
                           {visualPlan.items.filter((item) => item.action === "IMPACT_WORD").length} Impact Words · MP4
                         </p>
                       </div>
@@ -1855,21 +2592,50 @@ export default function BrollEnginePage() {
                       {!renderPlan ? (
                         <button
                           type="button"
-                          onClick={prepareRenderPlan}
+                          onClick={() => {
+                            if (
+                              motionFallbackResolvingCount >
+                              0
+                            ) {
+                              return;
+                            }
+
+                            if (
+                              unresolvedBrollCount >
+                              0
+                            ) {
+                              setPlanModalTab(
+                                "REVIEW"
+                              );
+                              setVisualPlanFilter(
+                                "UNRESOLVED"
+                              );
+                              return;
+                            }
+
+                            prepareRenderPlan();
+                          }}
                           disabled={
                             !library ||
-                            resolvedBrollCount !== visualPlan.items.length
+                            motionFallbackResolvingCount > 0
                           }
                           className={`rounded-xl px-5 py-3 text-sm font-black transition ${
-                            library &&
-                            resolvedBrollCount === visualPlan.items.length
-                              ? "bg-cyan-300 text-black hover:bg-cyan-200"
-                              : "cursor-not-allowed bg-cyan-300/10 text-cyan-200/50"
+                            !library ||
+                            motionFallbackResolvingCount > 0
+                              ? "cursor-not-allowed bg-cyan-300/10 text-cyan-200/50"
+                              : unresolvedBrollCount >
+                                  0
+                                ? "bg-amber-300 text-black hover:bg-amber-200"
+                                : "bg-cyan-300 text-black hover:bg-cyan-200"
                           }`}
                         >
-                          {resolvedBrollCount === visualPlan.items.length
-                            ? "PREPARE RENDER"
-                            : `RESOLVE ${visualPlan.items.length - resolvedBrollCount} CLIPS`}
+                          {motionFallbackResolvingCount > 0
+                            ? `RESOLVING ${motionFallbackResolvingCount} FALLBACK${
+                                motionFallbackResolvingCount === 1 ? "" : "S"
+                              }`
+                            : unresolvedBrollCount === 0
+                              ? "PREPARE RENDER"
+                              : `RESOLVE ${unresolvedBrollCount} CLIPS`}
                         </button>
                       ) : (
                         <button

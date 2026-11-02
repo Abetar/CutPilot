@@ -1,4 +1,8 @@
 import { getFFmpeg, resetFFmpeg } from "@/lib/extractAudio";
+import { buildMotionTimeline } from "@/lib/motion/buildMotionTimeline";
+import type {
+  RenderMotionGraphicSegment,
+} from "@/lib/motion/types";
 
 export type VoiceOverRenderBrollInput = {
   assetId: string;
@@ -64,6 +68,9 @@ type VoiceOverRenderOptions = {
 
   impactSegments?:
     VoiceOverImpactSegment[];
+
+  motionGraphicSegments?:
+    RenderMotionGraphicSegment[];
 
   onProgress?: (
     update:
@@ -1157,6 +1164,79 @@ async function createImpactWordPng(
   );
 }
 
+async function createVoiceOverBasePng(
+  width: number,
+  height: number
+): Promise<Uint8Array> {
+  const canvas =
+    document.createElement(
+      "canvas"
+    );
+
+  canvas.width =
+    width;
+
+  canvas.height =
+    height;
+
+  const context =
+    canvas.getContext(
+      "2d"
+    );
+
+  if (!context) {
+    throw new Error(
+      "No se pudo crear el fondo base de Motion Graphics."
+    );
+  }
+
+  /*
+    Mismo tono base usado por los Motion Graphics.
+    Si una animación entra/sale con alpha, nunca vemos
+    un frame transparente sin contenido detrás.
+  */
+  context.fillStyle =
+    "#05080c";
+
+  context.fillRect(
+    0,
+    0,
+    width,
+    height
+  );
+
+  const blob =
+    await new Promise<Blob>(
+      (
+        resolve,
+        reject
+      ) => {
+        canvas.toBlob(
+          (result) => {
+            if (!result) {
+              reject(
+                new Error(
+                  "No se pudo generar el fondo base de Motion Graphics."
+                )
+              );
+
+              return;
+            }
+
+            resolve(
+              result
+            );
+          },
+          "image/png"
+        );
+      }
+    );
+
+  return new Uint8Array(
+    await blob.arrayBuffer()
+  );
+}
+
 function createCameraClickTrackWav(
   duration: number,
   clickTimes: number[]
@@ -1540,7 +1620,20 @@ export async function renderVoiceOverVideo(
           ) &&
           segment.start >= 0 &&
           segment.end >
-            segment.start
+            segment.start &&
+          segment.start <
+            options.duration
+      )
+      .map(
+        (segment) => ({
+          ...segment,
+
+          end:
+            Math.min(
+              options.duration,
+              segment.end
+            ),
+        })
       )
       .sort(
         (a, b) =>
@@ -1548,13 +1641,42 @@ export async function renderVoiceOverVideo(
           b.start
       );
 
-  if (
-    segments.length === 0
-  ) {
-    throw new Error(
-      "No hay segmentos de B-roll para renderizar."
-    );
-  }
+  const motionGraphicSegments:
+    RenderMotionGraphicSegment[] =
+    (
+      options.motionGraphicSegments ??
+      []
+    )
+      .filter(
+        (segment) =>
+          Number.isFinite(
+            segment.start
+          ) &&
+          Number.isFinite(
+            segment.end
+          ) &&
+          segment.start >= 0 &&
+          segment.end >
+            segment.start &&
+          segment.start <
+            options.duration
+      )
+      .map(
+        (segment) => ({
+          ...segment,
+
+          end:
+            Math.min(
+              options.duration,
+              segment.end
+            ),
+        })
+      )
+      .sort(
+        (a, b) =>
+          a.start -
+          b.start
+      );
 
   const subtitleSegments =
     (
@@ -1717,12 +1839,82 @@ export async function renderVoiceOverVideo(
           b.start
       );
 
+  /*
+    La timeline visual de Voice-over ya no es "100% B-roll".
+
+    Cada tramo es exactamente uno de:
+    - BROLL
+    - MOTION_GRAPHIC
+
+    IMPACT_WORD sigue perteneciendo al primer grupo,
+    porque es un overlay encima de B-roll.
+  */
+  type VoiceOverVisualSegment =
+    | {
+        kind: "BROLL";
+        start: number;
+        end: number;
+        assetId: string;
+      }
+    | {
+        kind: "MOTION_GRAPHIC";
+        start: number;
+        end: number;
+      };
+
+  const visualSegments:
+    VoiceOverVisualSegment[] =
+    [
+      ...segments.map(
+        (segment) => ({
+          kind:
+            "BROLL" as const,
+
+          start:
+            segment.start,
+
+          end:
+            segment.end,
+
+          assetId:
+            segment.assetId,
+        })
+      ),
+
+      ...motionGraphicSegments.map(
+        (segment) => ({
+          kind:
+            "MOTION_GRAPHIC" as const,
+
+          start:
+            segment.start,
+
+          end:
+            segment.end,
+        })
+      ),
+    ]
+      .sort(
+        (a, b) =>
+          a.start -
+          b.start
+      );
+
+  if (
+    visualSegments.length ===
+    0
+  ) {
+    throw new Error(
+      "No hay segmentos visuales para renderizar."
+    );
+  }
+
   const tolerance =
     0.02;
 
   if (
     Math.abs(
-      segments[0].start
+      visualSegments[0].start
     ) >
     tolerance
   ) {
@@ -1734,16 +1926,16 @@ export async function renderVoiceOverVideo(
   for (
     let index = 1;
     index <
-    segments.length;
+    visualSegments.length;
     index += 1
   ) {
     const previous =
-      segments[
+      visualSegments[
         index - 1
       ];
 
     const current =
-      segments[index];
+      visualSegments[index];
 
     if (
       Math.abs(
@@ -1760,8 +1952,8 @@ export async function renderVoiceOverVideo(
 
   if (
     Math.abs(
-      segments[
-        segments.length - 1
+      visualSegments[
+        visualSegments.length - 1
       ].end -
         options.duration
     ) >
@@ -1946,8 +2138,14 @@ export async function renderVoiceOverVideo(
   try {
     /*
       ==========================================
-      ETAPA 1 — B-ROLL SECUENCIAL
+      ETAPA 1 — TIMELINE VISUAL SECUENCIAL
       ==========================================
+
+      Los bloques B-roll se renderizan como siempre.
+
+      Para MOTION_GRAPHIC generamos un fondo oscuro
+      temporal del mismo tamaño/duración. El Motion
+      Engine se superpone después como timeline RGBA.
     */
     const renderedSegments:
       Array<{
@@ -1955,34 +2153,41 @@ export async function renderVoiceOverVideo(
         duration: number;
       }> = [];
 
+    let motionBaseName:
+      string | null = null;
+
+    if (
+      motionGraphicSegments.length >
+      0
+    ) {
+      motionBaseName =
+        `cutpilot-voice-motion-base-${renderId}.png`;
+
+      await ffmpeg.writeFile(
+        motionBaseName,
+        await createVoiceOverBasePng(
+          Math.round(
+            options.width
+          ),
+          Math.round(
+            options.height
+          )
+        )
+      );
+
+      filesToDelete.push(
+        motionBaseName
+      );
+    }
+
     for (
       let index = 0;
       index <
-      segments.length;
+      visualSegments.length;
       index += 1
     ) {
       const segment =
-        segments[index];
-
-      const input =
-        inputByAsset.get(
-          segment.assetId
-        );
-
-      if (!input) {
-        throw new Error(
-          `No se encontró el asset ${segment.assetId}.`
-        );
-      }
-
-      const extension =
-        getSafeExtension(
-          input.path,
-          "mp4"
-        );
-
-      const sourceName =
-        `cutpilot-voice-source-${renderId}-${index}.${extension}`;
+        visualSegments[index];
 
       const segmentName =
         `cutpilot-voice-segment-${renderId}-${index}.mp4`;
@@ -1999,28 +2204,122 @@ export async function renderVoiceOverVideo(
           (index /
             Math.max(
               1,
-              segments.length
+              visualSegments.length
             )) *
-            62,
+            58,
         "ENCODING",
-        `Renderizando segmento ${index + 1}/${segments.length}...`
+        `Renderizando segmento ${index + 1}/${visualSegments.length}...`
       );
 
-      await ffmpeg.writeFile(
-        sourceName,
-        await fetchFile(
-          input.file
-        )
-      );
+      if (
+        segment.kind ===
+        "BROLL"
+      ) {
+        const input =
+          inputByAsset.get(
+            segment.assetId
+          );
 
-      try {
+        if (!input) {
+          throw new Error(
+            `No se encontró el asset ${segment.assetId}.`
+          );
+        }
+
+        const extension =
+          getSafeExtension(
+            input.path,
+            "mp4"
+          );
+
+        const sourceName =
+          `cutpilot-voice-source-${renderId}-${index}.${extension}`;
+
+        await ffmpeg.writeFile(
+          sourceName,
+          await fetchFile(
+            input.file
+          )
+        );
+
+        try {
+          await execWithDiagnostics(
+            [
+              "-stream_loop",
+              "-1",
+
+              "-i",
+              sourceName,
+
+              "-t",
+              segmentDuration.toFixed(
+                3
+              ),
+
+              "-an",
+
+              "-vf",
+              [
+                `scale=${Math.round(
+                  options.width
+                )}:${Math.round(
+                  options.height
+                )}:force_original_aspect_ratio=increase`,
+                `crop=${Math.round(
+                  options.width
+                )}:${Math.round(
+                  options.height
+                )}`,
+                "setsar=1",
+                "setpts=PTS-STARTPTS",
+                "fps=30",
+                "format=yuv420p",
+              ].join(","),
+
+              "-c:v",
+              "libx264",
+
+              "-preset",
+              "ultrafast",
+
+              "-crf",
+              "23",
+
+              "-pix_fmt",
+              "yuv420p",
+
+              "-movflags",
+              "+faststart",
+
+              segmentName,
+            ],
+            `FFmpeg falló al preparar el segmento ${index + 1}/${visualSegments.length}.`
+          );
+        } finally {
+          try {
+            await ffmpeg.deleteFile(
+              sourceName
+            );
+          } catch {
+            // Cleanup best effort.
+          }
+        }
+      } else {
+        if (
+          !motionBaseName
+        ) {
+          throw new Error(
+            "No se pudo preparar el fondo base de Motion Graphics."
+          );
+        }
+
         await execWithDiagnostics(
           [
-            "-stream_loop",
-            "-1",
+            "-loop",
+            "1",
 
             "-i",
-            sourceName,
+            motionBaseName,
 
             "-t",
             segmentDuration.toFixed(
@@ -2035,14 +2334,8 @@ export async function renderVoiceOverVideo(
                 options.width
               )}:${Math.round(
                 options.height
-              )}:force_original_aspect_ratio=increase`,
-              `crop=${Math.round(
-                options.width
-              )}:${Math.round(
-                options.height
               )}`,
               "setsar=1",
-              "setpts=PTS-STARTPTS",
               "fps=30",
               "format=yuv420p",
             ].join(","),
@@ -2064,16 +2357,8 @@ export async function renderVoiceOverVideo(
 
             segmentName,
           ],
-          `FFmpeg falló al preparar el segmento ${index + 1}/${segments.length}.`
+          `FFmpeg falló al preparar el fondo Motion ${index + 1}/${visualSegments.length}.`
         );
-      } finally {
-        try {
-          await ffmpeg.deleteFile(
-            sourceName
-          );
-        } catch {
-          // Cleanup best effort.
-        }
       }
 
       filesToDelete.push(
@@ -2186,7 +2471,160 @@ export async function renderVoiceOverVideo(
 
     /*
       ==========================================
-      ETAPA 3 — SUBTITLE TIMELINE
+      ETAPA 3 — AUTO MOTION GRAPHICS
+      ==========================================
+
+      Reutilizamos exactamente el mismo Motion Engine
+      de Auto Edit: Canvas -> PNG RGBA -> ffconcat.
+    */
+    let hasMotionTimeline =
+      false;
+
+    const motionConcatName =
+      `cutpilot-voice-motion-${renderId}.ffconcat`;
+
+    if (
+      motionGraphicSegments.length >
+      0
+    ) {
+      reportProgress(
+        70,
+        "PREPARING",
+        "Preparando Auto Motion Graphics..."
+      );
+
+      const motionTimeline =
+        await buildMotionTimeline({
+          width:
+            Math.round(
+              options.width
+            ),
+
+          height:
+            Math.round(
+              options.height
+            ),
+
+          duration:
+            options.duration,
+
+          segments:
+            motionGraphicSegments,
+        });
+
+      const motionFileByKey =
+        new Map<
+          string,
+          string
+        >();
+
+      for (
+        let assetIndex = 0;
+        assetIndex <
+        motionTimeline.assets.length;
+        assetIndex += 1
+      ) {
+        const asset =
+          motionTimeline.assets[
+            assetIndex
+          ];
+
+        const fileName =
+          `cutpilot-voice-motion-${assetIndex}-${renderId}.png`;
+
+        await ffmpeg.writeFile(
+          fileName,
+          asset.data
+        );
+
+        filesToDelete.push(
+          fileName
+        );
+
+        motionFileByKey.set(
+          asset.key,
+          fileName
+        );
+      }
+
+      if (
+        motionTimeline.frames.length >
+        0
+      ) {
+        const concatLines:
+          string[] = [
+            "ffconcat version 1.0",
+          ];
+
+        for (
+          const frame of
+          motionTimeline.frames
+        ) {
+          const fileName =
+            motionFileByKey.get(
+              frame.assetKey
+            );
+
+          if (!fileName) {
+            throw new Error(
+              `No se pudo resolver el frame Motion ${frame.assetKey}.`
+            );
+          }
+
+          concatLines.push(
+            `file '${fileName}'`
+          );
+
+          concatLines.push(
+            `duration ${Math.max(
+              0.001,
+              frame.duration
+            ).toFixed(6)}`
+          );
+        }
+
+        const lastFrame =
+          motionTimeline.frames[
+            motionTimeline.frames.length -
+              1
+          ];
+
+        const lastFileName =
+          motionFileByKey.get(
+            lastFrame.assetKey
+          );
+
+        if (!lastFileName) {
+          throw new Error(
+            "No se pudo resolver el último frame de Motion Graphics."
+          );
+        }
+
+        concatLines.push(
+          `file '${lastFileName}'`
+        );
+
+        await ffmpeg.writeFile(
+          motionConcatName,
+          new TextEncoder().encode(
+            concatLines.join(
+              "\n"
+            )
+          )
+        );
+
+        filesToDelete.push(
+          motionConcatName
+        );
+
+        hasMotionTimeline =
+          true;
+      }
+    }
+
+    /*
+      ==========================================
+      ETAPA 4 — SUBTITLE TIMELINE
       ==========================================
 
       Ahora los subtítulos se silencian solamente
@@ -2196,13 +2634,27 @@ export async function renderVoiceOverVideo(
     let hasSubtitleTimeline =
       false;
 
-    const impactMuteRanges =
-      impactSegments.map(
+    const subtitleMuteRanges = [
+      ...impactSegments.map(
         (segment) => ({
-          start: segment.start,
-          end: segment.end,
+          start:
+            segment.start,
+
+          end:
+            segment.end,
         })
-      );
+      ),
+
+      ...motionGraphicSegments.map(
+        (segment) => ({
+          start:
+            segment.start,
+
+          end:
+            segment.end,
+        })
+      ),
+    ];
 
     if (
       subtitleSegments.length >
@@ -2297,7 +2749,7 @@ export async function renderVoiceOverVideo(
           subtractCoveredRanges(
             subtitle.start,
             subtitle.end,
-            impactMuteRanges
+            subtitleMuteRanges
           );
 
         if (
@@ -2585,7 +3037,7 @@ export async function renderVoiceOverVideo(
 
     /*
       ==========================================
-      ETAPA 4 — IMPACT WORDS TIMELINE
+      ETAPA 5 — IMPACT WORDS TIMELINE
       ==========================================
 
       Port directo del comportamiento estable
@@ -2897,7 +3349,7 @@ export async function renderVoiceOverVideo(
 
     /*
       ==========================================
-      ETAPA 5 — AUDIO
+      ETAPA 6 — AUDIO
       ==========================================
     */
     reportProgress(
@@ -2942,7 +3394,7 @@ export async function renderVoiceOverVideo(
 
     /*
       ==========================================
-      ETAPA 6 — COMPOSICIÓN FINAL
+      ETAPA 7 — COMPOSICIÓN FINAL
       ==========================================
     */
     const args:
@@ -2957,10 +3409,32 @@ export async function renderVoiceOverVideo(
         videoConcatName,
       ];
 
+    let motionInputIndex:
+      number | null = null;
     let subtitleInputIndex:
       number | null = null;
     let impactInputIndex:
       number | null = null;
+
+    if (
+      hasMotionTimeline
+    ) {
+      motionInputIndex =
+        args.filter(
+          (value) => value === "-i"
+        ).length;
+
+      args.push(
+        "-f",
+        "concat",
+
+        "-safe",
+        "0",
+
+        "-i",
+        motionConcatName
+      );
+    }
 
     if (
       hasSubtitleTimeline
@@ -3030,6 +3504,7 @@ export async function renderVoiceOverVideo(
     }
 
     if (
+      hasMotionTimeline ||
       hasSubtitleTimeline ||
       hasImpactTimeline ||
       cameraClickInputIndex !== null
@@ -3040,6 +3515,47 @@ export async function renderVoiceOverVideo(
 
       let currentVideoLabel =
         "base_video";
+
+      /*
+        Layer order:
+        base visual
+        -> Motion Graphics
+        -> Impact Words
+        -> subtitles
+
+        Captions ya vienen silenciados en rangos Motion/Impact.
+      */
+      if (
+        motionInputIndex !==
+        null
+      ) {
+        filters.push(
+          `[${motionInputIndex}:v]format=rgba,fps=30,setpts=PTS-STARTPTS[motion_timeline]`
+        );
+
+        filters.push(
+          `[${currentVideoLabel}][motion_timeline]overlay=0:0:eof_action=pass:shortest=0:repeatlast=0[video_with_motion]`
+        );
+
+        currentVideoLabel =
+          "video_with_motion";
+      }
+
+      if (
+        impactInputIndex !==
+        null
+      ) {
+        filters.push(
+          `[${impactInputIndex}:v]format=rgba,fps=30,setpts=PTS-STARTPTS[impact_timeline]`
+        );
+
+        filters.push(
+          `[${currentVideoLabel}][impact_timeline]overlay=0:0:eof_action=pass:shortest=0:repeatlast=0[video_with_impact]`
+        );
+
+        currentVideoLabel =
+          "video_with_impact";
+      }
 
       if (
         subtitleInputIndex !==
@@ -3057,22 +3573,9 @@ export async function renderVoiceOverVideo(
           "video_with_subtitles";
       }
 
-      if (
-        impactInputIndex !==
-        null
-      ) {
-        filters.push(
-          `[${impactInputIndex}:v]format=rgba,fps=30,setpts=PTS-STARTPTS[impact_timeline]`
-        );
-
-        filters.push(
-          `[${currentVideoLabel}][impact_timeline]overlay=0:0:eof_action=pass:shortest=0:repeatlast=0[video_out]`
-        );
-      } else {
-        filters.push(
-          `[${currentVideoLabel}]null[video_out]`
-        );
-      }
+      filters.push(
+        `[${currentVideoLabel}]null[video_out]`
+      );
 
       let audioMap =
         `${audioInputIndex}:a:0`;
@@ -3149,16 +3652,20 @@ export async function renderVoiceOverVideo(
     reportProgress(
       86,
       "ENCODING",
-      hasImpactTimeline
-        ? "Aplicando Impact Words de Edit Engine..."
-        : hasSubtitleTimeline
-          ? "Aplicando subtítulos..."
-          : "Construyendo MP4 final..."
+      hasMotionTimeline
+        ? "Aplicando Auto Motion Graphics..."
+        : hasImpactTimeline
+          ? "Aplicando Impact Words de Edit Engine..."
+          : hasSubtitleTimeline
+            ? "Aplicando subtítulos..."
+            : "Construyendo MP4 final..."
     );
 
     await execWithDiagnostics(
       args,
-      hasImpactTimeline || hasSubtitleTimeline
+      hasMotionTimeline ||
+      hasImpactTimeline ||
+      hasSubtitleTimeline
         ? "FFmpeg falló al aplicar overlays al video final."
         : "FFmpeg falló al unir el video final con el voice-over."
     );

@@ -1,4 +1,8 @@
 import type { BrollCatalog } from "@/lib/broll/types";
+import type {
+  MotionGraphicRequest,
+  RenderMotionGraphicSegment,
+} from "@/lib/motion/types";
 import { buildSubtitles } from "@/lib/subtitles/buildSubtitles";
 import type {
   RenderBrollSegment,
@@ -11,7 +15,16 @@ type VisualPlanItem = {
   start: number;
   end: number;
   transcript: string;
-  action: "BROLL" | "IMPACT_WORD";
+
+  action:
+    | "BROLL"
+    | "IMPACT_WORD"
+    | "MOTION_GRAPHIC";
+
+  motionGraphic:
+    | MotionGraphicRequest
+    | null;
+
   impactText: string | null;
 };
 
@@ -47,6 +60,9 @@ export type BrollEngineRenderPlan = {
   subtitleSegments: RenderSubtitleSegment[];
 
   impactSegments: BrollEngineImpactSegment[];
+
+  motionGraphicSegments:
+    RenderMotionGraphicSegment[];
 };
 
 type BuildOptions = {
@@ -61,6 +77,182 @@ type BuildOptions = {
 
   words: TranscriptionWord[];
 };
+
+function normalizeMotionToken(
+  value: string
+) {
+  return value
+    .toLocaleLowerCase(
+      "es-MX"
+    )
+    .normalize(
+      "NFD"
+    )
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
+    .replace(
+      /[^\p{L}\p{N}]+/gu,
+      " "
+    )
+    .trim();
+}
+
+function findMotionValueRevealAt(
+  value: string | null,
+  words: TranscriptionWord[],
+  start: number,
+  end: number
+) {
+  if (
+    !value?.trim()
+  ) {
+    return null;
+  }
+
+  const targetTokens =
+    normalizeMotionToken(
+      value
+    )
+      .split(
+        /\s+/
+      )
+      .filter(Boolean);
+
+  if (
+    targetTokens.length ===
+    0
+  ) {
+    return null;
+  }
+
+  const rangeWords =
+    words
+      .filter(
+        (word) =>
+          word.start <
+            end &&
+          word.end >
+            start
+      )
+      .map(
+        (word) => ({
+          ...word,
+
+          normalized:
+            normalizeMotionToken(
+              word.word
+            ),
+        })
+      )
+      .filter(
+        (word) =>
+          Boolean(
+            word.normalized
+          )
+      );
+
+  /*
+    Primero intentamos hacer match consecutivo
+    del texto completo o de sus primeras palabras.
+  */
+  const maxSequenceLength =
+    Math.min(
+      targetTokens.length,
+      4
+    );
+
+  for (
+    let sequenceLength =
+      maxSequenceLength;
+    sequenceLength >=
+    1;
+    sequenceLength -= 1
+  ) {
+    for (
+      let index = 0;
+      index <=
+      rangeWords.length -
+        sequenceLength;
+      index += 1
+    ) {
+      let matches =
+        true;
+
+      for (
+        let offset = 0;
+        offset <
+        sequenceLength;
+        offset += 1
+      ) {
+        if (
+          rangeWords[
+            index +
+              offset
+          ].normalized !==
+          targetTokens[
+            offset
+          ]
+        ) {
+          matches =
+            false;
+
+          break;
+        }
+      }
+
+      if (matches) {
+        return Math.max(
+          start,
+          rangeWords[
+            index
+          ].start
+        );
+      }
+    }
+  }
+
+  /*
+    Fallback:
+    buscamos el token más distintivo del valor.
+  */
+  const distinctiveTokens =
+    [...targetTokens]
+      .sort(
+        (a, b) =>
+          b.length -
+          a.length
+      );
+
+  for (
+    const token of
+    distinctiveTokens
+  ) {
+    if (
+      token.length <
+      3
+    ) {
+      continue;
+    }
+
+    const found =
+      rangeWords.find(
+        (word) =>
+          word.normalized ===
+          token
+      );
+
+    if (found) {
+      return Math.max(
+        start,
+        found.start
+      );
+    }
+  }
+
+  return null;
+}
 
 export function buildBrollEngineRenderPlan({
   visualPlan,
@@ -99,8 +291,116 @@ export function buildBrollEngineRenderPlan({
     );
   }
 
+  /*
+    ==========================================
+    SAFETY CHECK — TIMELINE VISUAL COMPLETA
+    ==========================================
+
+    La cobertura ya no se valida usando solamente
+    B-roll. Ahora la timeline puede estar formada por:
+
+    BROLL
+    IMPACT_WORD (B-roll + overlay)
+    MOTION_GRAPHIC
+
+    Cada item sigue siendo exclusivo y contiguo.
+  */
+  const sortedVisualItems =
+    [...visualPlan.items]
+      .filter(
+        (item) =>
+          Number.isFinite(
+            item.start
+          ) &&
+          Number.isFinite(
+            item.end
+          ) &&
+          item.end >
+            item.start
+      )
+      .sort(
+        (a, b) =>
+          a.start -
+          b.start
+      );
+
+  if (
+    sortedVisualItems.length !==
+    visualPlan.items.length
+  ) {
+    throw new Error(
+      "El Visual Plan contiene timestamps inválidos."
+    );
+  }
+
+  const tolerance =
+    0.01;
+
+  if (
+    Math.abs(
+      sortedVisualItems[0]
+        .start
+    ) >
+    tolerance
+  ) {
+    throw new Error(
+      "La timeline de render no comienza en 0."
+    );
+  }
+
+  for (
+    let index = 1;
+    index <
+    sortedVisualItems.length;
+    index += 1
+  ) {
+    const previous =
+      sortedVisualItems[
+        index - 1
+      ];
+
+    const current =
+      sortedVisualItems[
+        index
+      ];
+
+    if (
+      Math.abs(
+        current.start -
+          previous.end
+      ) >
+      tolerance
+    ) {
+      throw new Error(
+        "La timeline de render contiene un hueco o solapamiento."
+      );
+    }
+  }
+
+  const lastVisualItem =
+    sortedVisualItems[
+      sortedVisualItems.length -
+        1
+    ];
+
+  if (
+    Math.abs(
+      lastVisualItem.end -
+        visualPlan.duration
+    ) >
+    tolerance
+  ) {
+    throw new Error(
+      "La timeline de render no cubre el final completo del audio."
+    );
+  }
+
   const brollSegments:
     RenderBrollSegment[] = [];
+
+  const motionGraphicSegments:
+    RenderMotionGraphicSegment[] =
+      [];
 
   const uniqueAssets =
     new Map<
@@ -109,8 +409,104 @@ export function buildBrollEngineRenderPlan({
     >();
 
   for (
-    const item of visualPlan.items
+    const item of
+    sortedVisualItems
   ) {
+    if (
+      item.action ===
+      "MOTION_GRAPHIC"
+    ) {
+      if (
+        !item.motionGraphic
+      ) {
+        throw new Error(
+          `El segmento ${item.id} es MOTION_GRAPHIC pero no contiene motionGraphic.`
+        );
+      }
+
+      const graphic =
+        item.motionGraphic;
+
+      const baseSegment:
+        RenderMotionGraphicSegment = {
+        start:
+          item.start,
+
+        end:
+          item.end,
+
+        graphic,
+      };
+
+      if (
+        graphic.type ===
+        "STAT_CALLOUT"
+      ) {
+        baseSegment.secondaryRevealAt =
+          findMotionValueRevealAt(
+            graphic.secondary,
+            words,
+            item.start,
+            item.end
+          );
+      }
+
+      if (
+        graphic.type ===
+        "COMPARISON"
+      ) {
+        baseSegment.secondaryRevealAt =
+          findMotionValueRevealAt(
+            graphic.rightTitle,
+            words,
+            item.start,
+            item.end
+          );
+      }
+
+      if (
+        graphic.type ===
+        "PROCESS_FLOW"
+      ) {
+        baseSegment.stepRevealAt =
+          graphic.steps.map(
+            (step) =>
+              findMotionValueRevealAt(
+                step.title,
+                words,
+                item.start,
+                item.end
+              )
+          );
+      }
+
+      if (
+        graphic.type ===
+        "KEY_POINTS"
+      ) {
+        baseSegment.pointRevealAt =
+          graphic.points.map(
+            (point) =>
+              findMotionValueRevealAt(
+                point.title,
+                words,
+                item.start,
+                item.end
+              )
+          );
+      }
+
+      motionGraphicSegments.push(
+        baseSegment
+      );
+
+      continue;
+    }
+
+    /*
+      BROLL e IMPACT_WORD siguen necesitando
+      un asset local porque Impact es sólo overlay.
+    */
     const assetId =
       selectedBrollByItem[
         item.id
@@ -170,19 +566,11 @@ export function buildBrollEngineRenderPlan({
 
   /*
     IMPACT_WORD sigue la misma lógica temporal
-    estable de Auto Edit:
-
-    tomamos únicamente las palabras reales de Whisper
-    que intersectan el rango del Visual Plan.
-
-    impactText se conserva como metadata para el futuro
-    renderer de Voice-over, pero NO inventamos timestamps
-    para texto que quizá no coincida literalmente con
-    lo pronunciado.
+    estable de Auto Edit.
   */
   const impactSegments:
     BrollEngineImpactSegment[] =
-    visualPlan.items
+    sortedVisualItems
       .filter(
         (item) =>
           item.action ===
@@ -245,18 +633,9 @@ export function buildBrollEngineRenderPlan({
       );
 
   /*
-    IMPORTANTE:
-    el Render Plan conserva SIEMPRE todos los subtítulos.
-
-    Antes eliminábamos los cues que coincidían con
-    IMPACT_WORD. Eso funcionaba en Auto Edit porque
-    Impact Words se renderizaba al mismo tiempo, pero
-    en B-Roll Engine provocaba huecos cuando el renderer
-    todavía no dibujaba esos impactos.
-
-    La responsabilidad de ocultar captions durante un
-    Impact Word pertenece al renderer que realmente
-    aplique ese efecto, no al builder de la timeline.
+    Conservamos todos los captions.
+    El renderer decide qué rangos esconder durante
+    IMPACT_WORD y MOTION_GRAPHIC.
   */
   const subtitleSegments:
     RenderSubtitleSegment[] =
@@ -287,82 +666,6 @@ export function buildBrollEngineRenderPlan({
       })
     );
 
-  /*
-    Safety check del timeline visual.
-
-    El Visual Planner ya valida cobertura,
-    pero repetimos la comprobación antes de
-    acercarnos a FFmpeg.
-  */
-  const sortedBrollSegments =
-    [...brollSegments].sort(
-      (a, b) =>
-        a.start -
-        b.start
-    );
-
-  const tolerance =
-    0.01;
-
-  if (
-    Math.abs(
-      sortedBrollSegments[0]
-        .start
-    ) >
-    tolerance
-  ) {
-    throw new Error(
-      "La timeline de render no comienza en 0."
-    );
-  }
-
-  for (
-    let index = 1;
-    index <
-    sortedBrollSegments.length;
-    index += 1
-  ) {
-    const previous =
-      sortedBrollSegments[
-        index - 1
-      ];
-
-    const current =
-      sortedBrollSegments[
-        index
-      ];
-
-    if (
-      Math.abs(
-        current.start -
-          previous.end
-      ) >
-      tolerance
-    ) {
-      throw new Error(
-        "La timeline de render contiene un hueco o solapamiento."
-      );
-    }
-  }
-
-  const lastSegment =
-    sortedBrollSegments[
-      sortedBrollSegments.length -
-        1
-    ];
-
-  if (
-    Math.abs(
-      lastSegment.end -
-        visualPlan.duration
-    ) >
-    tolerance
-  ) {
-    throw new Error(
-      "La timeline de render no cubre el final completo del audio."
-    );
-  }
-
   return {
     duration:
       visualPlan.duration,
@@ -371,10 +674,21 @@ export function buildBrollEngineRenderPlan({
       [...uniqueAssets.values()],
 
     brollSegments:
-      sortedBrollSegments,
+      [...brollSegments].sort(
+        (a, b) =>
+          a.start -
+          b.start
+      ),
 
     subtitleSegments,
 
     impactSegments,
+
+    motionGraphicSegments:
+      [...motionGraphicSegments].sort(
+        (a, b) =>
+          a.start -
+          b.start
+      ),
   };
 }
