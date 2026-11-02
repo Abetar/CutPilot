@@ -326,11 +326,14 @@ export async function POST(
     }
 
     const body =
-      await request.json();
+      (await request.json()) as {
+        items?: unknown;
+      };
 
-    const items =
+    const items:
+      FallbackCandidate[] =
       Array.isArray(
-        body?.items
+        body.items
       )
         ? body.items.filter(
             isValidCandidate
@@ -348,7 +351,8 @@ export async function POST(
       permite al modelo evitar Motion back-to-back cuando
       varios B-roll consecutivos fallaron al mismo tiempo.
     */
-    const safeItems =
+    const safeItems:
+      FallbackCandidate[] =
       items.slice(0, 20);
 
     const model =
