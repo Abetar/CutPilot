@@ -413,6 +413,88 @@ const visualPlanSchema = {
                   },
                 },
               },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "leftTitle",
+                  "leftHeadline",
+                  "leftIssues",
+                  "rightTitle",
+                  "rightHeadline",
+                  "rightStrengths",
+                  "rightCta",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "WEB_COMPARISON",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  leftTitle: {
+                    type: "string",
+                  },
+
+                  leftHeadline: {
+                    type: "string",
+                  },
+
+                  leftIssues: {
+                    type: "array",
+
+                    minItems: 2,
+
+                    maxItems: 3,
+
+                    items: {
+                      type: "string",
+                    },
+                  },
+
+                  rightTitle: {
+                    type: "string",
+                  },
+
+                  rightHeadline: {
+                    type: "string",
+                  },
+
+                  rightStrengths: {
+                    type: "array",
+
+                    minItems: 2,
+
+                    maxItems: 3,
+
+                    items: {
+                      type: "string",
+                    },
+                  },
+
+                  rightCta: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+                },
+              },
             ],
           },
 
@@ -854,6 +936,10 @@ A high-confidence opportunity exists when one of these structures is explicitly 
 4. A clearly spoken list of 2 to 5 parallel reasons, benefits, drawbacks, mistakes, requirements, features or takeaways:
    → Prefer KEY_POINTS.
 
+5. An explicit contrast between TWO website/landing-page states where page structure,
+   hierarchy or conversion direction is the point:
+   → Prefer WEB_COMPARISON over generic B-roll or regular COMPARISON.
+
 For videos longer than approximately 30 seconds:
 - If at least one high-confidence Motion Graphic opportunity exists, normally include at least 1 MOTION_GRAPHIC.
 - Prefer approximately 1-3 Motion Graphics in a typical short when the narration genuinely supports them.
@@ -942,6 +1028,7 @@ Available types:
 - COMPARISON
 - PROCESS_FLOW
 - KEY_POINTS
+- WEB_COMPARISON
 
 Do NOT request any other Motion Graphic type.
 
@@ -1028,6 +1115,67 @@ Do not use KEY_POINTS for chronological steps.
 Do not use KEY_POINTS for direct A-vs-B comparison.
 Do not use KEY_POINTS for one statistic.
 
+
+WEB_COMPARISON
+
+Use when the narration explicitly contrasts TWO website or landing-page
+approaches/states and showing fictional page mockups improves comprehension.
+
+Strong cases:
+- overloaded website vs goal-focused website
+- unclear or missing hero vs focused conversion hero
+- many competing icons/CTAs vs one clear primary CTA
+- website without direction vs website built to drive WhatsApp
+- website without direction vs website built to book an appointment
+
+Prefer WEB_COMPARISON over regular COMPARISON when the key idea is visual website
+structure, hierarchy or conversion direction.
+
+Fields:
+- label: short context label or null
+- leftTitle: concise label for the problematic / less-directed page
+- leftHeadline: short illustrative headline for the fictional left page
+- leftIssues: 2 to 3 concise transcript-supported issues
+- rightTitle: concise label for the focused / goal-driven page
+- rightHeadline: short illustrative headline for the fictional right page
+- rightStrengths: 2 to 3 concise transcript-supported strengths
+- rightCta: transcript-supported CTA such as "WHATSAPP" or "AGENDAR CITA", or null
+
+Rules:
+- The page mockups are FICTIONAL examples, not real websites.
+- Do not invent brands, products, prices, statistics, guarantees or business claims.
+- Headlines may be concise illustrative UI copy derived from the spoken idea, but
+  they must not introduce new factual claims.
+- Do not use WEB_COMPARISON merely because a website is mentioned.
+- Do not use it without a meaningful two-state web contrast.
+- If the viewer needs to see a REAL interface, prefer BROLL.
+- A WEB_COMPARISON segment may be somewhat longer than the normal 2-5 seconds
+  when necessary to communicate both sides of one coherent comparison.
+
+Example:
+"Una página sin dirección puede tener un hero sobrecargado y demasiados íconos.
+Una página con objetivo tiene un hero claro y te lleva a WhatsApp o a agendar."
+
+{
+  "type": "WEB_COMPARISON",
+  "label": "SIN DIRECCIÓN VS CON OBJETIVO",
+  "leftTitle": "SIN DIRECCIÓN",
+  "leftHeadline": "TODO EN UN SOLO LUGAR",
+  "leftIssues": [
+    "HERO SATURADO",
+    "DEMASIADOS ÍCONOS",
+    "SIN JERARQUÍA"
+  ],
+  "rightTitle": "CON OBJETIVO",
+  "rightHeadline": "AGENDA TU CONSULTA",
+  "rightStrengths": [
+    "HERO CLARO",
+    "CTA PRINCIPAL",
+    "ENFOQUE EN CONVERSIÓN"
+  ],
+  "rightCta": "AGENDAR CITA"
+}
+
 GENERAL RULES
 
 Do not invent:
@@ -1053,6 +1201,7 @@ Before finalizing, audit:
 - MOTION_GRAPHIC items contain motionGraphic only
 - Motion Graphics are selective
 - high-confidence Motion Graphic opportunities were not ignored in favor of generic B-roll
+- explicit website structure/conversion contrasts were evaluated for WEB_COMPARISON
 - videos longer than approximately 30 seconds normally include at least 1 MOTION_GRAPHIC when a high-confidence opportunity exists
 - visual ideas vary when supported
 

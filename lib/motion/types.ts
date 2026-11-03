@@ -2,7 +2,8 @@ export type MotionGraphicType =
   | "STAT_CALLOUT"
   | "COMPARISON"
   | "PROCESS_FLOW"
-  | "KEY_POINTS";
+  | "KEY_POINTS"
+  | "WEB_COMPARISON";
 
 export type StatCalloutMotionGraphicRequest = {
   type: "STAT_CALLOUT";
@@ -107,11 +108,40 @@ export type KeyPointsMotionGraphicRequest = {
   points: KeyPoint[];
 };
 
+
+export type WebComparisonMotionGraphicRequest = {
+  type: "WEB_COMPARISON";
+
+  /*
+    Contexto corto de la comparación.
+    Ejemplo: "SIN DIRECCIÓN VS CON OBJETIVO"
+  */
+  label: string | null;
+
+  /*
+    Página problemática / sin dirección.
+    El renderer controla el caos visual; el modelo sólo
+    describe el contenido semántico que debe destacarse.
+  */
+  leftTitle: string;
+  leftHeadline: string;
+  leftIssues: string[];
+
+  /*
+    Página enfocada / dirigida a un objetivo.
+  */
+  rightTitle: string;
+  rightHeadline: string;
+  rightStrengths: string[];
+  rightCta: string | null;
+};
+
 export type MotionGraphicRequest =
   | StatCalloutMotionGraphicRequest
   | ComparisonMotionGraphicRequest
   | ProcessFlowMotionGraphicRequest
-  | KeyPointsMotionGraphicRequest;
+  | KeyPointsMotionGraphicRequest
+  | WebComparisonMotionGraphicRequest;
 
 export type RenderMotionGraphicSegment = {
   start: number;

@@ -2317,6 +2317,88 @@ export async function renderVideoFromWorkspace(
             ];
           }
 
+          if (
+            graphic.type ===
+            "WEB_COMPARISON"
+          ) {
+            const leftTitle =
+              graphic.leftTitle.trim();
+
+            const leftHeadline =
+              graphic.leftHeadline.trim();
+
+            const leftIssues =
+              graphic.leftIssues
+                .map(
+                  (item) =>
+                    item.trim()
+                )
+                .filter(Boolean)
+                .slice(0, 3);
+
+            const rightTitle =
+              graphic.rightTitle.trim();
+
+            const rightHeadline =
+              graphic.rightHeadline.trim();
+
+            const rightStrengths =
+              graphic.rightStrengths
+                .map(
+                  (item) =>
+                    item.trim()
+                )
+                .filter(Boolean)
+                .slice(0, 3);
+
+            if (
+              !leftTitle ||
+              !leftHeadline ||
+              leftIssues.length === 0 ||
+              !rightTitle ||
+              !rightHeadline ||
+              rightStrengths.length === 0
+            ) {
+              return [];
+            }
+
+            return [
+              {
+                ...segment,
+
+                end:
+                  Math.min(
+                    segment.end,
+                    options.duration
+                  ),
+
+                graphic: {
+                  ...graphic,
+
+                  label:
+                    graphic.label?.trim() ||
+                    null,
+
+                  leftTitle,
+
+                  leftHeadline,
+
+                  leftIssues,
+
+                  rightTitle,
+
+                  rightHeadline,
+
+                  rightStrengths,
+
+                  rightCta:
+                    graphic.rightCta?.trim() ||
+                    null,
+                },
+              },
+            ];
+          }
+
           return [];
         }
       )

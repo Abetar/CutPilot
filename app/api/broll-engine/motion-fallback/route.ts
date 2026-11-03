@@ -190,6 +190,62 @@ const motionGraphicSchema = {
         },
       },
     },
+
+    {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "type",
+        "label",
+        "leftTitle",
+        "leftHeadline",
+        "leftIssues",
+        "rightTitle",
+        "rightHeadline",
+        "rightStrengths",
+        "rightCta",
+      ],
+      properties: {
+        type: {
+          type: "string",
+          enum: ["WEB_COMPARISON"],
+        },
+        label: {
+          type: ["string", "null"],
+        },
+        leftTitle: {
+          type: "string",
+        },
+        leftHeadline: {
+          type: "string",
+        },
+        leftIssues: {
+          type: "array",
+          minItems: 2,
+          maxItems: 3,
+          items: {
+            type: "string",
+          },
+        },
+        rightTitle: {
+          type: "string",
+        },
+        rightHeadline: {
+          type: "string",
+        },
+        rightStrengths: {
+          type: "array",
+          minItems: 2,
+          maxItems: 3,
+          items: {
+            type: "string",
+          },
+        },
+        rightCta: {
+          type: ["string", "null"],
+        },
+      },
+    },
   ],
 };
 
@@ -375,6 +431,7 @@ Available Motion Graphic types:
 - COMPARISON
 - PROCESS_FLOW
 - KEY_POINTS
+- WEB_COMPARISON
 
 Return useMotion=true ONLY for HIGH-CONFIDENCE cases explicitly supported by the spoken transcript.
 
@@ -398,6 +455,28 @@ KEY_POINTS:
 Use when the narration explicitly contains 2 to 5 parallel ideas, reasons, requirements, responsibilities, features, drawbacks or takeaways.
 You may shorten wording into concise titles, but you MUST preserve the spoken meaning and MUST NOT add new facts.
 
+WEB_COMPARISON:
+Use when the failed B-roll segment explicitly contrasts TWO website/landing-page
+states and a fictional simulated page comparison can communicate the idea better
+than unrelated local B-roll.
+
+Strong cases:
+- overloaded / directionless website vs goal-focused website
+- bad or unclear hero vs focused conversion hero
+- competing icons/CTAs vs one clear CTA
+- no conversion direction vs WhatsApp / appointment direction
+
+Use regular COMPARISON instead when the contrast is not specifically about
+website structure, hierarchy or conversion direction.
+
+For WEB_COMPARISON:
+- leftIssues and rightStrengths must contain 2 to 3 transcript-supported ideas
+- leftHeadline/rightHeadline may be concise illustrative fictional UI copy, but
+  must not add factual claims
+- rightCta must be explicitly supported by the narration, or null
+- never invent a brand, price, statistic, guarantee, product or offer
+- do not imply the fictional mockups are real websites
+
 Example:
 "qué información pedir, dónde guardarla, qué pasa si falla, cómo se conecta con el resto del sistema"
 → HIGH-CONFIDENCE KEY_POINTS
@@ -407,7 +486,13 @@ Possible point titles derived only from the narration:
 - QUÉ PASA SI FALLA
 - CÓMO SE CONECTA
 
-If the transcript does not clearly fit one of the four structures:
+Example WEB_COMPARISON:
+"una página sin dirección tiene un hero sobrecargado y demasiados íconos,
+mientras una página enfocada tiene un hero claro y lleva a WhatsApp"
+
+→ HIGH-CONFIDENCE WEB_COMPARISON
+
+If the transcript does not clearly fit one of the available structures:
 - useMotion=false
 - motionGraphic=null
 

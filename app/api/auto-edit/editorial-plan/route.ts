@@ -397,6 +397,88 @@ const editPlanSchema = {
                   },
                 },
               },
+
+              {
+                type: "object",
+
+                additionalProperties: false,
+
+                required: [
+                  "type",
+                  "label",
+                  "leftTitle",
+                  "leftHeadline",
+                  "leftIssues",
+                  "rightTitle",
+                  "rightHeadline",
+                  "rightStrengths",
+                  "rightCta",
+                ],
+
+                properties: {
+                  type: {
+                    type: "string",
+
+                    enum: [
+                      "WEB_COMPARISON",
+                    ],
+                  },
+
+                  label: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+
+                  leftTitle: {
+                    type: "string",
+                  },
+
+                  leftHeadline: {
+                    type: "string",
+                  },
+
+                  leftIssues: {
+                    type: "array",
+
+                    minItems: 2,
+
+                    maxItems: 3,
+
+                    items: {
+                      type: "string",
+                    },
+                  },
+
+                  rightTitle: {
+                    type: "string",
+                  },
+
+                  rightHeadline: {
+                    type: "string",
+                  },
+
+                  rightStrengths: {
+                    type: "array",
+
+                    minItems: 2,
+
+                    maxItems: 3,
+
+                    items: {
+                      type: "string",
+                    },
+                  },
+
+                  rightCta: {
+                    type: [
+                      "string",
+                      "null",
+                    ],
+                  },
+                },
+              },
             ],
           },
 
@@ -910,6 +992,7 @@ The available Motion Graphic types are:
 - COMPARISON
 - PROCESS_FLOW
 - KEY_POINTS
+- WEB_COMPARISON
 
 Do NOT request any other Motion Graphic type.
 
@@ -1228,6 +1311,105 @@ motionGraphic:
       "detail": null
     }
   ]
+}
+
+
+30. WEB_COMPARISON
+
+WEB_COMPARISON is appropriate when the narration explicitly contrasts TWO
+website or landing-page approaches/states and a simulated fictional web-page
+mockup makes that contrast easier to understand than talking head, generic
+B-roll or the simpler COMPARISON template.
+
+Strong examples:
+- overloaded website vs goal-focused website
+- unclear or missing hero vs focused conversion hero
+- many competing icons/CTAs vs one clear primary CTA
+- website without direction vs website designed to get a WhatsApp message
+- website without direction vs website designed to book an appointment
+
+Prefer WEB_COMPARISON over COMPARISON when the important contrast is specifically
+about the STRUCTURE, HIERARCHY or CONVERSION DIRECTION of a web page and showing
+two fictional page mockups is the useful visual explanation.
+
+Use regular COMPARISON for ordinary A-vs-B concepts, products, plans or workflows
+that do not need a simulated website.
+
+WEB_COMPARISON must contain:
+
+label:
+a short context label, or null.
+
+leftTitle:
+a concise label for the problematic / less-directed page.
+
+leftHeadline:
+short illustrative headline copy for the fictional left web mockup.
+
+leftIssues:
+2 to 3 concise issues explicitly supported by the narration.
+
+rightTitle:
+a concise label for the focused / goal-driven page.
+
+rightHeadline:
+short illustrative headline copy for the fictional right web mockup.
+
+rightStrengths:
+2 to 3 concise strengths explicitly supported by the narration.
+
+rightCta:
+the CTA explicitly supported by the narration, such as "WHATSAPP" or
+"AGENDAR CITA", or null when no concrete CTA is stated.
+
+Rules:
+
+- The pages are FICTIONAL visual examples. Do not imply they are real sites.
+- Preserve the speaker's actual contrast and direction.
+- Do NOT invent brands, products, prices, statistics, guarantees or business claims.
+- leftHeadline and rightHeadline may be concise illustrative UI copy derived from
+  the spoken idea, but they must not introduce new factual claims.
+- Use only issues/strengths supported by the transcript.
+- Do NOT use WEB_COMPARISON merely because the speaker mentions a website.
+- Do NOT use it when there is no meaningful two-state web contrast.
+- Do NOT use it to reproduce a real website exactly. If seeing a real interface is
+  important and available, prefer BROLL.
+- A WEB_COMPARISON segment may be slightly longer than a normal insert when needed
+  to cover both sides of one coherent comparison.
+
+Example:
+
+Transcript:
+
+"Una página hecha sin dirección puede tener un hero sobrecargado,
+tipografía pesada y demasiados íconos peleando por tu atención.
+En cambio, una página dirigida a un objetivo tiene un hero claro
+y elementos que te llevan a mandar WhatsApp o agendar una cita."
+
+Valid:
+
+action:
+"MOTION_GRAPHIC"
+
+motionGraphic:
+{
+  "type": "WEB_COMPARISON",
+  "label": "SIN DIRECCIÓN VS CON OBJETIVO",
+  "leftTitle": "SIN DIRECCIÓN",
+  "leftHeadline": "TODO EN UN SOLO LUGAR",
+  "leftIssues": [
+    "HERO SATURADO",
+    "TIPOGRAFÍA PESADA",
+    "DEMASIADOS ÍCONOS"
+  ],
+  "rightTitle": "CON OBJETIVO",
+  "rightHeadline": "AGENDA TU CONSULTA",
+  "rightStrengths": [
+    "HERO CLARO",
+    "CTA PRINCIPAL",
+    "ENFOQUE EN CONVERSIÓN"
+  ],
+  "rightCta": "AGENDAR CITA"
 }
 
 Create a complete editorial plan for the supplied transcript.
