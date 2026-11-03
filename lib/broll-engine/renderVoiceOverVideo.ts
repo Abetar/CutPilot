@@ -63,6 +63,8 @@ type VoiceOverRenderOptions = {
   brollSegments:
     VoiceOverRenderSegment[];
 
+  ambientSegments?: Array<{ start: number; end: number; variant: number }>;
+
   subtitleSegments?:
     VoiceOverSubtitleSegment[];
 
@@ -1566,6 +1568,27 @@ function createCameraClickTrackWav(
   );
 }
 
+
+// Decorative coverage only: no factual imagery, captions remain visible.
+async function createAmbientBackgroundPng(width: number, height: number, variant: number): Promise<Uint8Array> {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width); canvas.height = Math.round(height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No se pudo crear el fondo de respaldo.");
+  ctx.fillStyle = "#080f1d"; ctx.fillRect(0, 0, width, height);
+  const accents = ["rgba(34,211,238,0.24)", "rgba(139,92,246,0.24)", "rgba(16,185,129,0.22)"];
+  const x = width * (variant === 1 ? 0.8 : 0.2);
+  const gradient = ctx.createRadialGradient(x, height * 0.35, 0, x, height * 0.35, height * 0.75);
+  gradient.addColorStop(0, accents[variant % accents.length]); gradient.addColorStop(1, "rgba(8,15,29,0)");
+  ctx.fillStyle = gradient; ctx.fillRect(0, 0, width, height);
+  ctx.strokeStyle = "rgba(255,255,255,0.045)"; ctx.lineWidth = 2;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath(); ctx.arc(width * 0.5, height * 0.42, width * (0.3 + i * 0.17), 0, Math.PI * 2); ctx.stroke();
+  }
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("No se pudo generar el fondo.")), "image/png"));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 export async function renderVoiceOverVideo(
   audioFile: File,
   brollInputs:
@@ -1850,6 +1873,7 @@ export async function renderVoiceOverVideo(
     porque es un overlay encima de B-roll.
   */
   type VoiceOverVisualSegment =
+    | { kind: "AMBIENT"; start: number; end: number; variant: number }
     | {
         kind: "BROLL";
         start: number;
@@ -1865,6 +1889,7 @@ export async function renderVoiceOverVideo(
   const visualSegments:
     VoiceOverVisualSegment[] =
     [
+      ...(options.ambientSegments ?? []).map(segment => ({ ...segment, kind: "AMBIENT" as const })),
       ...segments.map(
         (segment) => ({
           kind:
@@ -2211,7 +2236,17 @@ export async function renderVoiceOverVideo(
         `Renderizando segmento ${index + 1}/${visualSegments.length}...`
       );
 
-      if (
+      if (segment.kind === "AMBIENT") {
+        const backgroundName = `cutpilot-ambient-${renderId}-${index}.png`;
+        filesToDelete.push(backgroundName);
+        await ffmpeg.writeFile(backgroundName, await createAmbientBackgroundPng(options.width, options.height, segment.variant));
+        await execWithDiagnostics([
+          "-loop", "1", "-i", backgroundName,
+          "-t", segmentDuration.toFixed(3), "-an",
+          "-vf", `zoompan=z='min(zoom+0.00025,1.12)':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s=${Math.round(options.width)}x${Math.round(options.height)}:fps=30,setsar=1,format=yuv420p`,
+          "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart", segmentName,
+        ], "No se pudo renderizar el fondo animado de respaldo.");
+      } else if (
         segment.kind ===
         "BROLL"
       ) {

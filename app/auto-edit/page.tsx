@@ -2023,7 +2023,7 @@ export default function AutoEditPage() {
                                         : ""
                                     }`}
                                   >
-                                    {graphic.label && (
+                                  {"label" in graphic && graphic.label && (
                                       <p className="mb-5 text-[11px] font-black tracking-[0.18em] text-slate-500">
                                         {graphic.label.toLocaleUpperCase(
                                           "es-MX"

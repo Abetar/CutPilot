@@ -3,7 +3,15 @@ export type MotionGraphicType =
   | "COMPARISON"
   | "PROCESS_FLOW"
   | "KEY_POINTS"
-  | "WEB_COMPARISON";
+  | "WEB_COMPARISON"
+  | "APP_FLOW"
+  | "UI_HIGHLIGHT"
+  | "BEFORE_AFTER"
+  | "METRIC_COUNTER"
+  | "FUNNEL_FLOW"
+  | "SYSTEM_DIAGRAM"
+  | "TIMELINE"
+  | "STACK_BUILD";
 
 export type StatCalloutMotionGraphicRequest = {
   type: "STAT_CALLOUT";
@@ -136,12 +144,69 @@ export type WebComparisonMotionGraphicRequest = {
   rightCta: string | null;
 };
 
+export type AppFlowMotionGraphicRequest = {
+  type: "APP_FLOW";
+  screens: Array<{ name: string; action: string }>;
+};
+
+export type UiHighlightMotionGraphicRequest = {
+  type: "UI_HIGHLIGHT";
+  surface: "FORM" | "DASHBOARD" | "LANDING";
+  elements: Array<{ label: string; role: "INPUT" | "BUTTON" | "CARD" | "CHART" }>;
+  focus: number[];
+};
+
+export type BeforeAfterState = "FRAGMENTED" | "ORGANIZED" | "IDLE" | "ACTIVE";
+export type BeforeAfterMotionGraphicRequest = {
+  type: "BEFORE_AFTER";
+  scene: "WORKSPACE" | "WEBSITE" | "DATA";
+  before: { label: string; state: BeforeAfterState };
+  after: { label: string; state: BeforeAfterState };
+};
+
+export type MetricCounterMotionGraphicRequest = {
+  type: "METRIC_COUNTER";
+  label: string;
+  from: number;
+  to: number;
+  unit: string | null;
+};
+
+export type FunnelFlowMotionGraphicRequest = {
+  type: "FUNNEL_FLOW";
+  stages: string[];
+};
+
+export type SystemDiagramMotionGraphicRequest = {
+  type: "SYSTEM_DIAGRAM";
+  nodes: Array<{ id: string; label: string; kind: "USER" | "APP" | "API" | "AI" | "DATABASE" }>;
+  connections: Array<{ from: string; to: string }>;
+};
+
+export type TimelineMotionGraphicRequest = {
+  type: "TIMELINE";
+  events: Array<{ when: string; label: string }>;
+};
+
+export type StackBuildMotionGraphicRequest = {
+  type: "STACK_BUILD";
+  layers: Array<{ label: string; role: "INTERFACE" | "LOGIC" | "DATA" | "INFRASTRUCTURE" }>;
+};
+
 export type MotionGraphicRequest =
   | StatCalloutMotionGraphicRequest
   | ComparisonMotionGraphicRequest
   | ProcessFlowMotionGraphicRequest
   | KeyPointsMotionGraphicRequest
-  | WebComparisonMotionGraphicRequest;
+  | WebComparisonMotionGraphicRequest
+  | AppFlowMotionGraphicRequest
+  | UiHighlightMotionGraphicRequest
+  | BeforeAfterMotionGraphicRequest
+  | MetricCounterMotionGraphicRequest
+  | FunnelFlowMotionGraphicRequest
+  | SystemDiagramMotionGraphicRequest
+  | TimelineMotionGraphicRequest
+  | StackBuildMotionGraphicRequest;
 
 export type RenderMotionGraphicSegment = {
   start: number;

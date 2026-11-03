@@ -1,5 +1,6 @@
 import { getFFmpeg } from "@/lib/extractAudio";
 import { buildMotionTimeline } from "@/lib/motion/buildMotionTimeline";
+import { getMotionTemplateDefinition } from "@/lib/motion/templateRegistry";
 
 import type {
   RenderMotionGraphicSegment,
@@ -2399,7 +2400,10 @@ export async function renderVideoFromWorkspace(
             ];
           }
 
-          return [];
+          // New templates use registry validation; preserve legacy normalization above.
+          return getMotionTemplateDefinition(graphic.type)?.isValid(segment)
+            ? [{ ...segment, end: Math.min(segment.end, options.duration) }]
+            : [];
         }
       )
       .sort(

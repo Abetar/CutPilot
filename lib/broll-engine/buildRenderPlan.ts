@@ -26,6 +26,7 @@ type VisualPlanItem = {
     | null;
 
   impactText: string | null;
+  ambientFallback?: boolean;
 };
 
 type VisualPlan = {
@@ -54,6 +55,7 @@ export type BrollEngineRenderPlan = {
   duration: number;
 
   assets: BrollEngineRenderAsset[];
+  ambientSegments: Array<{ start: number; end: number; variant: number }>;
 
   brollSegments: RenderBrollSegment[];
 
@@ -402,6 +404,8 @@ export function buildBrollEngineRenderPlan({
     RenderMotionGraphicSegment[] =
       [];
 
+  const ambientSegments: BrollEngineRenderPlan["ambientSegments"] = [];
+
   const uniqueAssets =
     new Map<
       string,
@@ -511,6 +515,11 @@ export function buildBrollEngineRenderPlan({
       selectedBrollByItem[
         item.id
       ];
+
+    if (!assetId && item.ambientFallback) {
+      ambientSegments.push({ start: item.start, end: item.end, variant: ambientSegments.length % 3 });
+      continue;
+    }
 
     if (!assetId) {
       throw new Error(
@@ -667,6 +676,7 @@ export function buildBrollEngineRenderPlan({
     );
 
   return {
+    ambientSegments,
     duration:
       visualPlan.duration,
 

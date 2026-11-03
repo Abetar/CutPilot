@@ -26,6 +26,7 @@ import {
 } from "@/lib/broll-engine/renderVoiceOverVideo";
 import { getBrollFile } from "@/lib/broll/localLibrary";
 import { matchBroll } from "@/lib/broll/matchBroll";
+import { getMotionTemplateDefinition } from "@/lib/motion/templateRegistry";
 
 import type {
   MotionGraphicRequest,
@@ -95,6 +96,7 @@ type VisualPlanItem = {
     Metadata local de Review. No forma parte del
     contrato del Visual Planner.
   */
+  ambientFallback?: boolean;
   resolutionSource?:
     | "VISUAL_PLAN"
     | "MOTION_FALLBACK";
@@ -623,8 +625,8 @@ export default function BrollEnginePage() {
     Si un BROLL no tiene NINGÚN candidato local, intentamos
     una segunda representación visual estructurada.
 
-    Sólo BROLL entra aquí. IMPACT_WORD necesita B-roll debajo
-    y conserva su resolución manual por ahora.
+    BROLL e IMPACT_WORD buscan cobertura local primero. Si no existe,
+    intentamos Motion y finalmente un fondo decorativo con captions.
   */
   useEffect(() => {
     if (
@@ -636,12 +638,28 @@ export default function BrollEnginePage() {
       return;
     }
 
+    // Preserve the entity and existing relevance thresholds on the contextual retry.
+    const contextualMatches: Record<string, string> = {};
+    for (const item of visualPlan.items) {
+      if ((item.action !== "BROLL" && item.action !== "IMPACT_WORD") || !item.broll ||
+          selectedBrollByItem[item.id] || item.ambientFallback || motionFallbackStatusByItem[item.id]) continue;
+      if (matchBroll(library.catalog, item.broll, 1).length) continue;
+      const matches = matchBroll(library.catalog, { ...item.broll, intent: item.transcript, concepts: item.broll.concepts }, 1);
+      if (matches[0]) contextualMatches[item.id] = matches[0].asset.id;
+    }
+    if (Object.keys(contextualMatches).length) {
+      setSelectedBrollByItem(current => ({ ...current,
+        ...Object.fromEntries(Object.entries(contextualMatches).filter(([id]) => !current[id])) }));
+      return;
+    }
+
     const candidates =
       visualPlan.items.filter(
         (item) => {
           if (
-            item.action !== "BROLL" ||
+            (item.action !== "BROLL" && item.action !== "IMPACT_WORD") ||
             !item.broll ||
+            item.ambientFallback ||
             selectedBrollByItem[item.id] ||
             motionFallbackStatusByItem[item.id]
           ) {
@@ -656,7 +674,7 @@ export default function BrollEnginePage() {
             ).length === 0
           );
         }
-      );
+      ).slice(0, 20);
 
     if (candidates.length === 0) {
       return;
@@ -721,9 +739,18 @@ export default function BrollEnginePage() {
           );
         }
 
+        const safeDecisions = (data.items ?? []).filter(decision => {
+          if (!decision.useMotion || !decision.motionGraphic) return true;
+          try {
+            const candidate = candidates.find(item => item.id === decision.id);
+            return Boolean(candidate && getMotionTemplateDefinition(decision.motionGraphic.type)?.isValid({
+              start: candidate.start, end: candidate.end, graphic: decision.motionGraphic,
+            }));
+          } catch { return false; }
+        });
         const decisionById =
           new Map(
-            (data.items ?? []).map(
+            safeDecisions.map(
               (decision) => [
                 decision.id,
                 decision,
@@ -752,9 +779,10 @@ export default function BrollEnginePage() {
                       !decision ||
                       !decision.useMotion ||
                       !decision.motionGraphic ||
-                      item.action !== "BROLL"
+                      (item.action !== "BROLL" && item.action !== "IMPACT_WORD")
                     ) {
-                      return item;
+                      return candidates.some(candidate => candidate.id === item.id)
+                        ? { ...item, ambientFallback: true } : item;
                     }
 
                     return {
@@ -764,6 +792,7 @@ export default function BrollEnginePage() {
                         "MOTION_GRAPHIC" as const,
 
                       broll: null,
+                      ambientFallback: false,
 
                       motionGraphic:
                         decision.motionGraphic,
@@ -811,9 +840,11 @@ export default function BrollEnginePage() {
         );
 
         /*
-          Un fallo del fallback NO rompe el Visual Plan.
-          Los segmentos vuelven al flujo manual UNRESOLVED.
+          Un fallo del servicio conserva el plan y usa cobertura decorativa.
+          Los captions e Impact Words permanecen disponibles.
         */
+        setVisualPlan(current => current ? ({ ...current, items: current.items.map(item =>
+          candidates.some(candidate => candidate.id === item.id) ? { ...item, ambientFallback: true } : item) }) : current);
         setMotionFallbackStatusByItem(
           (current) => {
             const next = {
@@ -1170,6 +1201,7 @@ export default function BrollEnginePage() {
 
             brollSegments:
               renderPlan.brollSegments,
+            ambientSegments: renderPlan.ambientSegments,
 
             subtitleSegments:
               renderPlan.subtitleSegments,
@@ -1502,6 +1534,7 @@ export default function BrollEnginePage() {
         !selectedBrollByItem[
           item.id
         ] &&
+        !item.ambientFallback &&
         motionFallbackStatusByItem[
           item.id
         ] !== "RESOLVING"
@@ -1581,6 +1614,7 @@ export default function BrollEnginePage() {
               !selectedBrollByItem[
                 item.id
               ] &&
+              !item.ambientFallback &&
               motionFallbackStatusByItem[
                 item.id
               ] !== "RESOLVING"
@@ -2322,6 +2356,7 @@ export default function BrollEnginePage() {
                             !selectedBrollByItem[
                               item.id
                             ] &&
+                            !item.ambientFallback &&
                             !isResolvingFallback;
 
                           return (
@@ -2407,7 +2442,7 @@ export default function BrollEnginePage() {
 
                               {item.motionGraphic && (
                                 <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/20 p-3">
-                                  {item.motionGraphic.label && (
+                                  {"label" in item.motionGraphic && item.motionGraphic.label && (
                                     <p className="text-[10px] font-bold tracking-[0.14em] text-lime-200/70">
                                       {item.motionGraphic.label}
                                     </p>
@@ -2528,6 +2563,14 @@ export default function BrollEnginePage() {
                               <p className="mt-3 text-[10px] leading-4 text-slate-500">
                                 No requiere matching de B-roll.
                               </p>
+                            </div>
+                          ) : item.ambientFallback && !selectedBrollByItem[item.id] ? (
+                            <div className="rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.035] p-4">
+                              <p className="text-xs font-bold text-cyan-200">FONDO ANIMADO DE RESPALDO</p>
+                              <p className="mt-2 text-xs text-slate-400">Sin un B-roll o motion adecuado. Conserva subtítulos e Impact Words. Puedes reemplazarlo por un clip.</p>
+                              {item.broll && library && <BrollEngineMatchList request={item.broll} catalog={library.catalog}
+                                selectedAssetId={selectedBrollByItem[item.id] ?? null}
+                                onSelect={(assetId) => setSelectedBrollByItem(current => ({ ...current, [item.id]: assetId }))} />}
                             </div>
                           ) : isResolvingFallback ? (
                             <div className="rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.035] p-4">

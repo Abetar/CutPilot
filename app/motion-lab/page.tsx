@@ -12,12 +12,21 @@ import {
 
 import type {
   MotionTimeline,
+  MotionGraphicRequest,
   WebComparisonMotionGraphicRequest,
 } from "@/lib/motion/types";
+import { packDemos } from "@/lib/motion/packDemos";
 
 const PREVIEW_WIDTH = 1080;
 const PREVIEW_HEIGHT = 1920;
 const PREVIEW_DURATION = 8;
+
+const existingDemos: MotionGraphicRequest[] = [
+  { type: "STAT_CALLOUT", label: "Tiempo de edición", primary: "3 HORAS", secondary: "20 MIN" },
+  { type: "COMPARISON", label: null, leftTitle: "Manual", leftDetail: "Control por clip", rightTitle: "Automático", rightDetail: "Plan asistido", emphasis: "NEUTRAL" },
+  { type: "PROCESS_FLOW", label: null, steps: [{ title: "Grabar", detail: null }, { title: "Editar", detail: null }, { title: "Publicar", detail: null }] },
+  { type: "KEY_POINTS", label: null, points: [{ title: "Estructura", detail: null }, { title: "Integración", detail: null }, { title: "Mantenimiento", detail: null }] },
+];
 
 const demoGraphic:
   WebComparisonMotionGraphicRequest = {
@@ -89,6 +98,9 @@ function createAssetUrls(
 }
 
 export default function MotionLabPage() {
+  const demos: MotionGraphicRequest[] = [...existingDemos, demoGraphic, ...packDemos];
+  const [selectedType, setSelectedType] = useState("WEB_COMPARISON");
+  const selectedGraphic = demos.find(demo => demo.type === selectedType) ?? demoGraphic;
   const [
     timeline,
     setTimeline,
@@ -146,6 +158,9 @@ export default function MotionLabPage() {
         setIsBuilding(
           true
         );
+        setIsPlaying(false);
+        setTimeline(null);
+        setAssetUrls(null);
 
         setError(
           null
@@ -170,7 +185,7 @@ export default function MotionLabPage() {
                   PREVIEW_DURATION,
 
                 graphic:
-                  demoGraphic,
+                  selectedGraphic,
               },
             ],
           });
@@ -251,7 +266,7 @@ export default function MotionLabPage() {
         }
       }
     };
-  }, []);
+  }, [selectedType]);
 
   useEffect(() => {
     if (
@@ -420,7 +435,7 @@ export default function MotionLabPage() {
           </p>
 
           <h1 className="mt-2 text-3xl font-black tracking-tight">
-            WEB_COMPARISON V0
+            {selectedType}
           </h1>
 
           <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
@@ -428,12 +443,19 @@ export default function MotionLabPage() {
             buildMotionTimeline() que consume el renderer final.
           </p>
 
+          <label className="mt-6 block text-sm text-slate-300">
+            Template
+            <select aria-label="Motion template" value={selectedType} disabled={isBuilding} onChange={event => setSelectedType(event.target.value)} className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-900 p-3 text-white disabled:opacity-40">
+              {demos.map(demo => <option key={demo.type} value={demo.type}>{demo.type}</option>)}
+            </select>
+          </label>
           <div className="mt-6 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
             <p className="text-xs font-bold text-slate-300">
               Demo
             </p>
 
-            <div className="mt-3 space-y-2 text-xs leading-5 text-slate-500">
+            <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-slate-400">{JSON.stringify(selectedGraphic, null, 2)}</pre>
+            <div hidden={selectedType !== "WEB_COMPARISON"} className="mt-3 space-y-2 text-xs leading-5 text-slate-500">
               <p>
                 Sin dirección: hero saturado, demasiados iconos y poca
                 jerarquía.
@@ -480,6 +502,11 @@ export default function MotionLabPage() {
             </button>
           </div>
 
+          <label className="mt-5 block text-xs text-slate-400">
+            Frame
+            <input aria-label="Preview frame" type="range" min={0} max={Math.max(0, (timeline?.frames.length ?? 1) - 1)} value={frameIndex} disabled={isBuilding || !timeline}
+              onChange={event => { setIsPlaying(false); setFrameIndex(Number(event.target.value)); }} className="mt-2 block w-full accent-lime-300" />
+          </label>
           <div className="mt-5 rounded-xl border border-white/[0.06] bg-black/30 px-4 py-3 text-xs text-slate-500">
             {isBuilding ? (
               <span>
@@ -509,7 +536,7 @@ export default function MotionLabPage() {
                 src={
                   currentImageUrl
                 }
-                alt="WEB_COMPARISON Motion Graphic preview"
+                alt={`${selectedType} Motion Graphic preview`}
                 className="h-full w-full object-contain"
               />
             ) : (
