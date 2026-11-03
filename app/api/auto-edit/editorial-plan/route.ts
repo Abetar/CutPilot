@@ -1,3 +1,8 @@
+import {
+  motionPackSchemas,
+  motionPackPlannerRules,
+  isRenderableMotionRequest,
+} from "@/lib/motion/plannerPack";
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 
@@ -166,6 +171,7 @@ const editPlanSchema = {
 
           motionGraphic: {
             anyOf: [
+              ...motionPackSchemas,
               {
                 type: "null",
               },
@@ -1413,6 +1419,8 @@ motionGraphic:
 }
 
 Create a complete editorial plan for the supplied transcript.
+
+${motionPackPlannerRules}
 `;
 
     const transcriptForModel = {
@@ -1595,6 +1603,10 @@ Create a complete editorial plan for the supplied transcript.
       );
     }
 
+    if (!Array.isArray(editPlan?.items) || editPlan.items.some((item: { action?: string; motionGraphic?: unknown }) =>
+      item.action === "MOTION_GRAPHIC" && !isRenderableMotionRequest(item.motionGraphic))) {
+      return NextResponse.json({ error: "El plan contiene un Motion Graphic inválido." }, { status: 502 });
+    }
     return NextResponse.json(
       editPlan
     );

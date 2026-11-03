@@ -1,3 +1,8 @@
+import {
+  motionPackSchemas,
+  motionPackPlannerRules,
+  isRenderableMotionRequest,
+} from "@/lib/motion/plannerPack";
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 
@@ -42,6 +47,7 @@ type OpenAIResponse = {
 
 const motionGraphicSchema = {
   anyOf: [
+    ...motionPackSchemas,
     {
       type: "null",
     },
@@ -510,6 +516,8 @@ For useMotion=false:
 - motionGraphic MUST be null
 
 Return exactly one decision for every supplied id.
+
+${motionPackPlannerRules}
 `;
 
     const response = await fetch(
@@ -641,7 +649,7 @@ Return exactly one decision for every supplied id.
 
       if (
         decision.useMotion &&
-        decision.motionGraphic
+        isRenderableMotionRequest(decision.motionGraphic)
       ) {
         decisionById.set(
           decision.id,

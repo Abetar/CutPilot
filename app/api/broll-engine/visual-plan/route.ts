@@ -1,3 +1,8 @@
+import {
+  motionPackSchemas,
+  motionPackPlannerRules,
+  isRenderableMotionRequest,
+} from "@/lib/motion/plannerPack";
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 
@@ -182,6 +187,7 @@ const visualPlanSchema = {
 
           motionGraphic: {
             anyOf: [
+              ...motionPackSchemas,
               {
                 type: "null",
               },
@@ -636,12 +642,12 @@ function normalizeAndValidatePlan(
       "MOTION_GRAPHIC"
     ) {
       if (
-        !item.motionGraphic
+        !isRenderableMotionRequest(item.motionGraphic)
       ) {
         return {
           valid: false,
           error:
-            "Un segmento MOTION_GRAPHIC no contiene motionGraphic.",
+            "Un segmento MOTION_GRAPHIC contiene un payload ausente o inválido.",
         };
       }
 
@@ -1206,6 +1212,8 @@ Before finalizing, audit:
 - visual ideas vary when supported
 
 Return one complete Visual Plan for the supplied transcript.
+
+${motionPackPlannerRules}
 `;
 
     const transcriptForModel = {
