@@ -25,6 +25,7 @@ import {
   type VoiceOverRenderProgress,
 } from "@/lib/broll-engine/renderVoiceOverVideo";
 import { getBrollFile } from "@/lib/broll/localLibrary";
+import { getFFmpeg } from "@/lib/extractAudio";
 import { matchBroll } from "@/lib/broll/matchBroll";
 import { getMotionTemplateDefinition } from "@/lib/motion/templateRegistry";
 
@@ -239,6 +240,204 @@ function isSupportedAudio(file: File) {
     extension === "mp3" ||
     extension === "wav" ||
     extension === "m4a"
+  );
+}
+
+const MAX_DIRECT_TRANSCRIPTION_BYTES =
+  4 * 1024 * 1024;
+
+async function prepareAudioForTranscription(
+  file: File
+): Promise<File> {
+  if (
+    file.size <=
+    MAX_DIRECT_TRANSCRIPTION_BYTES
+  ) {
+    return file;
+  }
+
+  /*
+    Vercel corta request bodies grandes antes de que
+    nuestra API route pueda responder JSON.
+
+    Para voice-over grandes (especialmente WAV),
+    generamos una copia M4A ligera EN EL NAVEGADOR.
+
+    El archivo original permanece intacto y se sigue
+    usando después para el render final.
+  */
+  const ffmpeg =
+    await getFFmpeg();
+
+  const {
+    fetchFile,
+  } =
+    await import(
+      "@ffmpeg/util"
+    );
+
+  const jobId =
+    crypto.randomUUID();
+
+  const sourceExtension =
+    file.name
+      .split(".")
+      .pop()
+      ?.toLowerCase()
+      .replace(
+        /[^a-z0-9]/g,
+        ""
+      ) ||
+    "audio";
+
+  const inputName =
+    `cutpilot-transcribe-${jobId}.${sourceExtension}`;
+
+  const outputName =
+    `cutpilot-transcribe-${jobId}.m4a`;
+
+  try {
+    await ffmpeg.writeFile(
+      inputName,
+      await fetchFile(file)
+    );
+
+    const exitCode =
+      await ffmpeg.exec([
+        "-i",
+        inputName,
+
+        "-vn",
+
+        /*
+          Mono + 16 kHz es suficiente para voz/transcripción
+          y reduce mucho el tamaño frente a WAV.
+        */
+        "-ac",
+        "1",
+
+        "-ar",
+        "16000",
+
+        "-c:a",
+        "aac",
+
+        "-b:a",
+        "64k",
+
+        "-movflags",
+        "+faststart",
+
+        outputName,
+      ]);
+
+    if (exitCode !== 0) {
+      throw new Error(
+        "FFmpeg no pudo comprimir el audio para transcripción."
+      );
+    }
+
+    const outputData =
+      await ffmpeg.readFile(
+        outputName
+      );
+
+    if (
+      typeof outputData ===
+      "string"
+    ) {
+      throw new Error(
+        "FFmpeg devolvió un formato inesperado al comprimir el audio."
+      );
+    }
+
+    const bytes =
+      new Uint8Array(
+        outputData.byteLength
+      );
+
+    bytes.set(
+      outputData
+    );
+
+    const compressed =
+      new File(
+        [bytes],
+        "cutpilot-transcription.m4a",
+        {
+          type:
+            "audio/mp4",
+        }
+      );
+
+    if (
+      compressed.size >
+      MAX_DIRECT_TRANSCRIPTION_BYTES
+    ) {
+      throw new Error(
+        `El audio sigue siendo demasiado grande para transcribir después de comprimirlo (${formatBytes(
+          compressed.size
+        )}). Prueba con un voice-over más corto o un MP3/M4A más ligero.`
+      );
+    }
+
+    return compressed;
+  } finally {
+    try {
+      await ffmpeg.deleteFile(
+        inputName
+      );
+    } catch {
+      // Cleanup best effort.
+    }
+
+    try {
+      await ffmpeg.deleteFile(
+        outputName
+      );
+    } catch {
+      // Cleanup best effort.
+    }
+  }
+}
+
+async function readApiJson(
+  response: Response,
+  fallbackMessage: string
+) {
+  const contentType =
+    response.headers.get(
+      "content-type"
+    ) ??
+    "";
+
+  if (
+    contentType.includes(
+      "application/json"
+    )
+  ) {
+    return await response.json();
+  }
+
+  const raw =
+    (await response.text())
+      .trim();
+
+  if (
+    response.status ===
+      413 ||
+    /request entity too large|function_payload_too_large|payload too large/i.test(
+      raw
+    )
+  ) {
+    throw new Error(
+      "El audio excedió el tamaño permitido por el servidor. CutPilot intentó reducirlo antes de enviarlo, pero la petición todavía fue demasiado grande."
+    );
+  }
+
+  throw new Error(
+    raw ||
+      fallbackMessage
   );
 }
 
@@ -485,18 +684,41 @@ export default function BrollEnginePage() {
     setVisualPlan(null);
 
     try {
-      const formData = new FormData();
-      formData.append("audio", audio.file);
+      /*
+        El WAV/original queda intacto en audio.file.
+        Sólo preparamos una copia comprimida cuando
+        el upload directo sería demasiado grande.
+      */
+      const transcriptionFile =
+        await prepareAudioForTranscription(
+          audio.file
+        );
 
-      const response = await fetch(
-        "/api/broll-engine/transcribe",
-        {
-          method: "POST",
-          body: formData,
-        }
+      const formData =
+        new FormData();
+
+      formData.append(
+        "audio",
+        transcriptionFile
       );
 
-      const data = await response.json();
+      const response =
+        await fetch(
+          "/api/broll-engine/transcribe",
+          {
+            method:
+              "POST",
+
+            body:
+              formData,
+          }
+        );
+
+      const data =
+        await readApiJson(
+          response,
+          "No se pudo transcribir el audio."
+        );
 
       if (!response.ok) {
         throw new Error(
@@ -506,25 +728,45 @@ export default function BrollEnginePage() {
       }
 
       setTranscription({
-        text: data.text ?? "",
-        language: data.language ?? null,
-        duration: data.duration ?? null,
-        segments: Array.isArray(data.segments)
-          ? data.segments
-          : [],
-        words: Array.isArray(data.words)
-          ? data.words
-          : [],
+        text:
+          data.text ??
+          "",
+
+        language:
+          data.language ??
+          null,
+
+        duration:
+          data.duration ??
+          null,
+
+        segments:
+          Array.isArray(
+            data.segments
+          )
+            ? data.segments
+            : [],
+
+        words:
+          Array.isArray(
+            data.words
+          )
+            ? data.words
+            : [],
       });
 
-      setAnalysisStatus("TRANSCRIBED");
+      setAnalysisStatus(
+        "TRANSCRIBED"
+      );
     } catch (error) {
       console.error(
         "B-Roll Engine analyze audio error:",
         error
       );
 
-      setAnalysisStatus("FAILED");
+      setAnalysisStatus(
+        "FAILED"
+      );
 
       setAnalysisError(
         error instanceof Error
