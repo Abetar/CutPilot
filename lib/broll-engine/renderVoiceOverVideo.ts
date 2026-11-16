@@ -93,7 +93,7 @@ const SUBTITLE_MIN_FONT_SCALE =
   0.048;
 
 const SUBTITLE_FONT_WEIGHT =
-  700;
+  900;
 
 const SUBTITLE_MAX_WIDTH_SCALE =
   0.76;
@@ -437,10 +437,8 @@ async function createSubtitlePng(
   height: number,
   text: string,
   options: {
-    highlightedWordIndex?:
-      number | null;
-    disableSemanticAccent?:
-      boolean;
+    highlightedWordIndex?: number | null;
+    disableSemanticAccent?: boolean;
   } = {}
 ): Promise<Uint8Array> {
   const canvas =
@@ -469,15 +467,21 @@ async function createSubtitlePng(
     options.highlightedWordIndex ??
     null;
 
-  const disableSemanticAccent =
-    options.disableSemanticAccent ??
-    false;
-
   const emoji =
     pickSubtitleEmoji(
       text
     );
 
+  /*
+    Caption style:
+
+    - texto blanco bold en MAYÚSCULAS
+    - palabra activa: texto blanco + caja roja
+    - máximo 2 líneas
+    - emoji contextual opcional al final
+    - sin accent lime
+    - sin pop/zoom de la palabra activa
+  */
   const uppercaseText =
     text.toLocaleUpperCase(
       "es-MX"
@@ -516,15 +520,15 @@ async function createSubtitlePng(
   let fontSize =
     initialFontSize;
 
-  let lines:
-    string[] = [];
+  let lines: string[] =
+    [];
 
   while (
     fontSize >=
       minimumFontSize
   ) {
     context.font =
-      `${SUBTITLE_FONT_WEIGHT} ${fontSize}px ${fontFamily}`;
+      `900 ${fontSize}px ${fontFamily}`;
 
     lines =
       wrapSubtitleLines(
@@ -539,7 +543,8 @@ async function createSubtitlePng(
       break;
     }
 
-    fontSize -= 2;
+    fontSize -=
+      2;
   }
 
   if (
@@ -560,7 +565,7 @@ async function createSubtitlePng(
   }
 
   const lineHeight =
-    fontSize * 1.08;
+    fontSize * 1.16;
 
   const centerY =
     height *
@@ -575,16 +580,6 @@ async function createSubtitlePng(
     totalHeight / 2 +
     lineHeight / 2;
 
-  const accentWord =
-    disableSemanticAccent
-      ? ""
-      : pickSubtitleAccentWord(
-          text
-        );
-
-  let accentRendered =
-    false;
-
   let visibleWordIndex =
     0;
 
@@ -598,10 +593,10 @@ async function createSubtitlePng(
     "round";
 
   context.font =
-    `${SUBTITLE_FONT_WEIGHT} ${fontSize}px ${fontFamily}`;
+    `900 ${fontSize}px ${fontFamily}`;
 
   context.strokeStyle =
-    "rgba(0, 0, 0, 0.74)";
+    "rgba(0, 0, 0, 0.82)";
 
   context.lineWidth =
     Math.max(
@@ -615,7 +610,7 @@ async function createSubtitlePng(
   context.shadowBlur =
     Math.max(
       7,
-      fontSize * 0.15
+      fontSize * 0.14
     );
 
   context.shadowOffsetX =
@@ -624,7 +619,7 @@ async function createSubtitlePng(
   context.shadowOffsetY =
     Math.max(
       3,
-      fontSize * 0.05
+      fontSize * 0.045
     );
 
   lines.forEach(
@@ -658,8 +653,7 @@ async function createSubtitlePng(
         ) => {
           const hasTrailingSpace =
             wordIndex <
-            lineWords.length -
-              1;
+            lineWords.length - 1;
 
           const measuredToken =
             hasTrailingSpace
@@ -670,11 +664,6 @@ async function createSubtitlePng(
             context.measureText(
               measuredToken
             ).width;
-
-          const normalized =
-            normalizeSubtitleWord(
-              word
-            );
 
           const isEmoji =
             /\p{Extended_Pictographic}/u.test(
@@ -694,22 +683,11 @@ async function createSubtitlePng(
             spokenWordIndex ===
               highlightedWordIndex;
 
-          const isAccent =
-            highlightedWordIndex ===
-              null &&
-            !accentRendered &&
-            Boolean(
-              accentWord
-            ) &&
-            normalized ===
-              accentWord;
-
-          context.fillStyle =
-            isTimedHighlight ||
-            isAccent
-              ? "#bef264"
-              : "#ffffff";
-
+          /*
+            Caja roja compacta detrás de la palabra activa.
+            No cambia el layout del cue: solo se dibuja detrás
+            de la palabra que ya ocupa su posición normal.
+          */
           if (
             isTimedHighlight &&
             !isEmoji
@@ -719,62 +697,108 @@ async function createSubtitlePng(
                 word
               ).width;
 
-            const centerX =
-              x +
-              wordWidth / 2;
+            const paddingX =
+              Math.max(
+                5,
+                fontSize * 0.11
+              );
+
+            const paddingY =
+              Math.max(
+                4,
+                fontSize * 0.12
+              );
+
+            const boxX =
+              x -
+              paddingX;
+
+            const boxY =
+              y -
+              fontSize * 0.5 -
+              paddingY;
+
+            const boxWidth =
+              wordWidth +
+              paddingX * 2;
+
+            const boxHeight =
+              fontSize +
+              paddingY * 2;
+
+            const radius =
+              Math.max(
+                4,
+                fontSize * 0.09
+              );
 
             context.save();
 
-            context.translate(
-              centerX,
-              y
+            context.shadowColor =
+              "rgba(0, 0, 0, 0.28)";
+
+            context.shadowBlur =
+              Math.max(
+                4,
+                fontSize * 0.08
+              );
+
+            context.shadowOffsetX =
+              0;
+
+            context.shadowOffsetY =
+              Math.max(
+                2,
+                fontSize * 0.03
+              );
+
+            context.fillStyle =
+              "#ef233c";
+
+            context.beginPath();
+
+            context.roundRect(
+              boxX,
+              boxY,
+              boxWidth,
+              boxHeight,
+              radius
             );
 
-            context.scale(
-              SUBTITLE_ACTIVE_WORD_SCALE,
-              SUBTITLE_ACTIVE_WORD_SCALE
-            );
-
-            context.strokeText(
-              word,
-              -wordWidth / 2,
-              0
-            );
-
-            context.fillText(
-              word,
-              -wordWidth / 2,
-              0
-            );
+            context.fill();
 
             context.restore();
-          } else {
-            if (!isEmoji) {
-              context.strokeText(
-                word,
-                x,
-                y
-              );
-            }
+          }
 
-            context.fillText(
+          context.fillStyle =
+            "#ffffff";
+
+          /*
+            Emoji sin stroke para conservar el render de color.
+            El resto mantiene borde/sombra para legibilidad
+            sobre talking head o B-roll claro.
+          */
+          if (!isEmoji) {
+            context.strokeText(
               word,
               x,
               y
             );
           }
 
-          if (isAccent) {
-            accentRendered =
-              true;
-          }
+          context.fillText(
+            word,
+            x,
+            y
+          );
 
           if (!isEmoji) {
             visibleWordIndex +=
               1;
           }
 
-          x += tokenWidth;
+          x +=
+            tokenWidth;
         }
       );
     }
@@ -811,6 +835,7 @@ async function createSubtitlePng(
     await blob.arrayBuffer()
   );
 }
+
 
 async function createTransparentSubtitlePng(
   width: number,
@@ -3553,12 +3578,15 @@ export async function renderVoiceOverVideo(
 
       /*
         Layer order:
-        base visual
+        base visual / B-roll
         -> Motion Graphics
-        -> Impact Words
         -> subtitles
+        -> Impact Words
 
-        Captions ya vienen silenciados en rangos Motion/Impact.
+        Así los captions quedan por encima del B-roll y
+        los Impact Words conservan la prioridad visual.
+        Los captions ya vienen silenciados en rangos
+        Motion/Impact cuando corresponde.
       */
       if (
         motionInputIndex !==
@@ -3577,22 +3605,6 @@ export async function renderVoiceOverVideo(
       }
 
       if (
-        impactInputIndex !==
-        null
-      ) {
-        filters.push(
-          `[${impactInputIndex}:v]format=rgba,fps=30,setpts=PTS-STARTPTS[impact_timeline]`
-        );
-
-        filters.push(
-          `[${currentVideoLabel}][impact_timeline]overlay=0:0:eof_action=pass:shortest=0:repeatlast=0[video_with_impact]`
-        );
-
-        currentVideoLabel =
-          "video_with_impact";
-      }
-
-      if (
         subtitleInputIndex !==
         null
       ) {
@@ -3606,6 +3618,22 @@ export async function renderVoiceOverVideo(
 
         currentVideoLabel =
           "video_with_subtitles";
+      }
+
+      if (
+        impactInputIndex !==
+        null
+      ) {
+        filters.push(
+          `[${impactInputIndex}:v]format=rgba,fps=30,setpts=PTS-STARTPTS[impact_timeline]`
+        );
+
+        filters.push(
+          `[${currentVideoLabel}][impact_timeline]overlay=0:0:eof_action=pass:shortest=0:repeatlast=0[video_with_impact]`
+        );
+
+        currentVideoLabel =
+          "video_with_impact";
       }
 
       filters.push(

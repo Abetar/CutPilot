@@ -166,7 +166,7 @@ const SUBTITLE_MIN_FONT_SCALE =
   0.048;
 
 const SUBTITLE_FONT_WEIGHT =
-  700;
+  900;
 
 const SUBTITLE_MAX_WIDTH_SCALE =
   0.76;
@@ -689,25 +689,20 @@ async function createSubtitlePng(
     options.highlightedWordIndex ??
     null;
 
-  const disableSemanticAccent =
-    options.disableSemanticAccent ??
-    false;
-
   const emoji =
     pickSubtitleEmoji(
       text
     );
 
   /*
-    V3 visual:
-    los subtítulos se muestran siempre en MAYÚSCULAS.
+    Caption style:
 
-    Conservamos `text` original para:
-    - detección de emoji
-    - selección de palabra accent
-    - lógica semántica
-
-    Solo transformamos lo que se dibuja.
+    - texto blanco bold en MAYÚSCULAS
+    - palabra activa: texto blanco + caja roja
+    - máximo 2 líneas
+    - emoji contextual opcional al final
+    - sin accent lime
+    - sin pop/zoom de la palabra activa
   */
   const uppercaseText =
     text.toLocaleUpperCase(
@@ -719,18 +714,6 @@ async function createSubtitlePng(
       ? `${uppercaseText} ${emoji}`
       : uppercaseText;
 
-  /*
-    Look V2 de CutPilot:
-
-    - tipografía más delgada y legible
-    - tamaño global configurable
-    - bloque compacto
-    - centro-bajo
-    - blanco + una palabra lime
-    - emoji contextual opcional
-    - borde negro fino
-    - sombra negra visible
-  */
   const maxTextWidth =
     width *
     SUBTITLE_MAX_WIDTH_SCALE;
@@ -767,7 +750,7 @@ async function createSubtitlePng(
       minimumFontSize
   ) {
     context.font =
-      `${SUBTITLE_FONT_WEIGHT} ${fontSize}px ${fontFamily}`;
+      `900 ${fontSize}px ${fontFamily}`;
 
     lines =
       wrapSubtitleLines(
@@ -804,7 +787,7 @@ async function createSubtitlePng(
   }
 
   const lineHeight =
-    fontSize * 1.08;
+    fontSize * 1.16;
 
   const centerY =
     height *
@@ -819,20 +802,6 @@ async function createSubtitlePng(
     totalHeight / 2 +
     lineHeight / 2;
 
-  /*
-    Elegimos la palabra acentuada usando el
-    texto original, no el emoji añadido.
-  */
-  const accentWord =
-    disableSemanticAccent
-      ? ""
-      : pickSubtitleAccentWord(
-          text
-        );
-
-  let accentRendered =
-    false;
-
   let visibleWordIndex =
     0;
 
@@ -846,14 +815,10 @@ async function createSubtitlePng(
     "round";
 
   context.font =
-    `${SUBTITLE_FONT_WEIGHT} ${fontSize}px ${fontFamily}`;
+    `900 ${fontSize}px ${fontFamily}`;
 
-  /*
-    Contorno más fino para que el texto deje
-    de sentirse tipo meme/gaming.
-  */
   context.strokeStyle =
-    "rgba(0, 0, 0, 0.74)";
+    "rgba(0, 0, 0, 0.82)";
 
   context.lineWidth =
     Math.max(
@@ -861,17 +826,13 @@ async function createSubtitlePng(
       fontSize * 0.055
     );
 
-  /*
-    Sombra suficiente para conservar legibilidad
-    sobre fondos claros sin dominar el texto.
-  */
   context.shadowColor =
     "rgba(0, 0, 0, 0.88)";
 
   context.shadowBlur =
     Math.max(
       7,
-      fontSize * 0.15
+      fontSize * 0.14
     );
 
   context.shadowOffsetX =
@@ -880,7 +841,7 @@ async function createSubtitlePng(
   context.shadowOffsetY =
     Math.max(
       3,
-      fontSize * 0.05
+      fontSize * 0.045
     );
 
   lines.forEach(
@@ -926,11 +887,6 @@ async function createSubtitlePng(
               measuredToken
             ).width;
 
-          const normalized =
-            normalizeSubtitleWord(
-              word
-            );
-
           const isEmoji =
             /\p{Extended_Pictographic}/u.test(
               word
@@ -949,30 +905,10 @@ async function createSubtitlePng(
             spokenWordIndex ===
               highlightedWordIndex;
 
-          const isAccent =
-            highlightedWordIndex ===
-              null &&
-            !accentRendered &&
-            Boolean(
-              accentWord
-            ) &&
-            normalized ===
-              accentWord;
-
-          context.fillStyle =
-            isTimedHighlight ||
-            isAccent
-              ? "#bef264"
-              : "#ffffff";
-
           /*
-            La palabra activa hace un pequeño "pop"
-            de tamaño SIN cambiar el layout del cue.
-
-            Importante:
-            seguimos avanzando `x` usando tokenWidth
-            del tamaño normal. Así las demás palabras
-            no brincan ni se reacomodan mientras hablas.
+            Caja roja compacta detrás de la palabra activa.
+            No cambia el layout del cue: solo se dibuja detrás
+            de la palabra que ya ocupa su posición normal.
           */
           if (
             isTimedHighlight &&
@@ -983,60 +919,100 @@ async function createSubtitlePng(
                 word
               ).width;
 
-            const centerX =
-              x +
-              wordWidth / 2;
+            const paddingX =
+              Math.max(
+                5,
+                fontSize * 0.11
+              );
+
+            const paddingY =
+              Math.max(
+                4,
+                fontSize * 0.12
+              );
+
+            const boxX =
+              x -
+              paddingX;
+
+            const boxY =
+              y -
+              fontSize * 0.5 -
+              paddingY;
+
+            const boxWidth =
+              wordWidth +
+              paddingX * 2;
+
+            const boxHeight =
+              fontSize +
+              paddingY * 2;
+
+            const radius =
+              Math.max(
+                4,
+                fontSize * 0.09
+              );
 
             context.save();
 
-            context.translate(
-              centerX,
-              y
+            context.shadowColor =
+              "rgba(0, 0, 0, 0.28)";
+
+            context.shadowBlur =
+              Math.max(
+                4,
+                fontSize * 0.08
+              );
+
+            context.shadowOffsetX =
+              0;
+
+            context.shadowOffsetY =
+              Math.max(
+                2,
+                fontSize * 0.03
+              );
+
+            context.fillStyle =
+              "#ef233c";
+
+            context.beginPath();
+
+            context.roundRect(
+              boxX,
+              boxY,
+              boxWidth,
+              boxHeight,
+              radius
             );
 
-            context.scale(
-              SUBTITLE_ACTIVE_WORD_SCALE,
-              SUBTITLE_ACTIVE_WORD_SCALE
-            );
-
-            context.strokeText(
-              word,
-              -wordWidth / 2,
-              0
-            );
-
-            context.fillText(
-              word,
-              -wordWidth / 2,
-              0
-            );
+            context.fill();
 
             context.restore();
-          } else {
-            /*
-              Para emojis evitamos el stroke fuerte,
-              porque algunos emoji color se ven peor
-              con contorno negro encima.
-            */
-            if (!isEmoji) {
-              context.strokeText(
-                word,
-                x,
-                y
-              );
-            }
+          }
 
-            context.fillText(
+          context.fillStyle =
+            "#ffffff";
+
+          /*
+            Emoji sin stroke para conservar el render de color.
+            El resto mantiene borde/sombra para legibilidad
+            sobre talking head o B-roll claro.
+          */
+          if (!isEmoji) {
+            context.strokeText(
               word,
               x,
               y
             );
           }
 
-          if (isAccent) {
-            accentRendered =
-              true;
-          }
+          context.fillText(
+            word,
+            x,
+            y
+          );
 
           if (!isEmoji) {
             visibleWordIndex +=
@@ -4128,53 +4104,12 @@ export async function renderVideoFromWorkspace(
 
   /*
     ======================================
-    IMPACT WORDS
-    ======================================
-
-    El stream es transparente fuera de los momentos
-    KEY_STATEMENT y full-frame durante el efecto.
-    Por eso un único overlay basta.
-  */
-
-  if (
-    impactTimelineInputIndex !==
-    null
-  ) {
-    const impactTimelineLabel =
-      "impact_timeline";
-
-    const impactOutputLabel =
-      "impact_video";
-
-    filters.push(
-      `[${impactTimelineInputIndex}:v]` +
-        `format=rgba,` +
-        `fps=30,` +
-        `setpts=PTS-STARTPTS` +
-        `[${impactTimelineLabel}]`
-    );
-
-    filters.push(
-      `[${currentVideoLabel}]` +
-        `[${impactTimelineLabel}]` +
-        `overlay=0:0:` +
-        `eof_action=pass:` +
-        `shortest=0:` +
-        `repeatlast=0` +
-        `[${impactOutputLabel}]`
-    );
-
-    currentVideoLabel =
-      impactOutputLabel;
-  }
-
-  /*
-    ======================================
     SUBTÍTULOS WORD HIGHLIGHT
     ======================================
 
-    Todo el timeline de captions llega como UN solo
-    stream RGBA desde concat.
+    Se aplica después del B-roll/Motion y antes de
+    Impact Words. Así los captions permanecen visibles
+    sobre B-roll, mientras Impact conserva prioridad.
 
     Sin:
     - ASS
@@ -4216,6 +4151,50 @@ export async function renderVideoFromWorkspace(
 
     currentVideoLabel =
       subtitleOutputLabel;
+  }
+
+  /*
+    ======================================
+    IMPACT WORDS
+    ======================================
+
+    El stream es transparente fuera de los momentos
+    KEY_STATEMENT y full-frame durante el efecto.
+
+    Se aplica DESPUÉS de captions para conservar la
+    prioridad visual de Impact Words.
+  */
+
+  if (
+    impactTimelineInputIndex !==
+    null
+  ) {
+    const impactTimelineLabel =
+      "impact_timeline";
+
+    const impactOutputLabel =
+      "impact_video";
+
+    filters.push(
+      `[${impactTimelineInputIndex}:v]` +
+        `format=rgba,` +
+        `fps=30,` +
+        `setpts=PTS-STARTPTS` +
+        `[${impactTimelineLabel}]`
+    );
+
+    filters.push(
+      `[${currentVideoLabel}]` +
+        `[${impactTimelineLabel}]` +
+        `overlay=0:0:` +
+        `eof_action=pass:` +
+        `shortest=0:` +
+        `repeatlast=0` +
+        `[${impactOutputLabel}]`
+    );
+
+    currentVideoLabel =
+      impactOutputLabel;
   }
 
   /*
