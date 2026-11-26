@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 
-import { extractAudioFromVideo } from "@/lib/extractAudio";
+import { extractAudioFromVideo, getFFmpeg } from "@/lib/extractAudio";
 
 import type {
   MotionGraphicRequest,
@@ -229,6 +229,195 @@ type VideoSessionContextType = {
   */
   resetBrollReviews: () => void;
 };
+
+
+/*
+  Auto Edit uploads audio to a Next/Vercel route.
+  Large PCM WAV files can exceed the request-body limit before
+  the route is even executed. Keep a margin below that limit.
+*/
+const MAX_DIRECT_TRANSCRIPTION_BYTES =
+  4 * 1024 * 1024;
+
+async function prepareAutoEditAudioForTranscription(
+  file: File
+): Promise<File> {
+  if (
+    file.size <=
+    MAX_DIRECT_TRANSCRIPTION_BYTES
+  ) {
+    return file;
+  }
+
+  const ffmpeg =
+    await getFFmpeg();
+
+  const {
+    fetchFile,
+  } =
+    await import(
+      "@ffmpeg/util"
+    );
+
+  const jobId =
+    crypto.randomUUID();
+
+  const inputName =
+    `cutpilot-auto-edit-${jobId}.wav`;
+
+  const outputName =
+    `cutpilot-auto-edit-${jobId}.m4a`;
+
+  try {
+    await ffmpeg.writeFile(
+      inputName,
+      await fetchFile(file)
+    );
+
+    const exitCode =
+      await ffmpeg.exec([
+        "-i",
+        inputName,
+
+        "-vn",
+
+        "-ac",
+        "1",
+
+        "-ar",
+        "16000",
+
+        "-c:a",
+        "aac",
+
+        "-b:a",
+        "64k",
+
+        "-movflags",
+        "+faststart",
+
+        outputName,
+      ]);
+
+    if (exitCode !== 0) {
+      throw new Error(
+        "No se pudo reducir el audio antes de transcribirlo."
+      );
+    }
+
+    const outputData =
+      await ffmpeg.readFile(
+        outputName
+      );
+
+    if (
+      typeof outputData ===
+      "string"
+    ) {
+      throw new Error(
+        "FFmpeg devolvió un formato inesperado al preparar la transcripción."
+      );
+    }
+
+    const bytes =
+      new Uint8Array(
+        outputData.byteLength
+      );
+
+    bytes.set(
+      outputData
+    );
+
+    const compressed =
+      new File(
+        [bytes],
+        "cutpilot-transcription.m4a",
+        {
+          type:
+            "audio/mp4",
+        }
+      );
+
+    if (
+      compressed.size >
+      MAX_DIRECT_TRANSCRIPTION_BYTES
+    ) {
+      throw new Error(
+        `El audio sigue siendo demasiado grande para enviarlo (${(
+          compressed.size /
+          (1024 * 1024)
+        ).toFixed(2)} MB).`
+      );
+    }
+
+    console.log(
+      "CutPilot audio compressed for transcription:",
+      `${(
+        file.size /
+        (1024 * 1024)
+      ).toFixed(2)} MB -> ${(
+        compressed.size /
+        (1024 * 1024)
+      ).toFixed(2)} MB`
+    );
+
+    return compressed;
+  } finally {
+    try {
+      await ffmpeg.deleteFile(
+        inputName
+      );
+    } catch {
+      // Cleanup best effort.
+    }
+
+    try {
+      await ffmpeg.deleteFile(
+        outputName
+      );
+    } catch {
+      // Cleanup best effort.
+    }
+  }
+}
+
+async function readAutoEditApiJson(
+  response: Response,
+  fallbackMessage: string
+) {
+  const contentType =
+    response.headers.get(
+      "content-type"
+    ) ?? "";
+
+  if (
+    contentType.includes(
+      "application/json"
+    )
+  ) {
+    return await response.json();
+  }
+
+  const raw =
+    (await response.text())
+      .trim();
+
+  if (
+    response.status === 413 ||
+    /request entity too large|function_payload_too_large|payload too large/i.test(
+      raw
+    )
+  ) {
+    throw new Error(
+      "El archivo de audio excedió el límite de carga del servidor."
+    );
+  }
+
+  throw new Error(
+    raw ||
+    fallbackMessage
+  );
+}
 
 const VideoSessionContext =
   createContext<VideoSessionContextType | null>(
@@ -465,12 +654,17 @@ export function VideoSessionProvider({
         ======================================
       */
 
+      const transcriptionFile =
+        await prepareAutoEditAudioForTranscription(
+          audioFile
+        );
+
       const formData =
         new FormData();
 
       formData.append(
         "audio",
-        audioFile
+        transcriptionFile
       );
 
       const transcriptionResponse =
@@ -484,7 +678,10 @@ export function VideoSessionProvider({
         );
 
       const transcriptionData =
-        await transcriptionResponse.json();
+        await readAutoEditApiJson(
+          transcriptionResponse,
+          "No se pudo transcribir el video."
+        );
 
       if (
         !transcriptionResponse.ok
@@ -613,7 +810,10 @@ export function VideoSessionProvider({
         );
 
       const editorialData =
-        await editorialResponse.json();
+        await readAutoEditApiJson(
+          editorialResponse,
+          "No se pudo generar el Edit Plan."
+        );
 
       if (
         !editorialResponse.ok
