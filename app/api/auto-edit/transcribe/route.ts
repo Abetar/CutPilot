@@ -80,17 +80,23 @@ export async function POST(request: Request) {
       media.name.toLowerCase();
 
     const validFile =
+      media.type === "audio/mpeg" ||
+      media.type === "audio/mp3" ||
       media.type === "audio/wav" ||
       media.type === "audio/x-wav" ||
+      media.type === "audio/mp4" ||
+      media.type === "audio/x-m4a" ||
       media.type === "video/mp4" ||
+      fileName.endsWith(".mp3") ||
       fileName.endsWith(".wav") ||
+      fileName.endsWith(".m4a") ||
       fileName.endsWith(".mp4");
 
     if (!validFile) {
       return NextResponse.json(
         {
           error:
-            "Formato no compatible para transcripción.",
+            "Formato no compatible. Usa MP3, WAV, M4A o MP4.",
         },
         { status: 400 }
       );
